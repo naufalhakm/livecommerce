@@ -30,8 +30,8 @@ services:
     ports:
       - "7000:3000"
     environment:
-      - VITE_API_URL=http://localhost:7080
-      - VITE_WS_URL=ws://localhost:7080
+      - VITE_API_URL=http://100.64.5.96:7080
+      - VITE_WS_URL=ws://100.64.5.96:7080
     depends_on:
       - backend
 
