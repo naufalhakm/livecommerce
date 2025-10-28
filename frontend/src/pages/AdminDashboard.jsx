@@ -54,20 +54,16 @@ const AdminDashboard = () => {
     setIsTraining(true);
     
     try {
-      // Get unique seller IDs from products
       const sellerIds = [...new Set(products.map(p => p.seller_id))];
       
       for (const sellerId of sellerIds) {
-        const response = await fetch(`http://100.64.5.96:7001/train?seller_id=seller_${sellerId}`, {
-          method: 'POST'
-        });
-        
-        if (response.ok) {
-          console.log(`Training started for seller ${sellerId}`);
+        const sellerProduct = products.find(p => p.seller_id === sellerId);
+        if (sellerProduct) {
+          await productAPI.train(sellerProduct.id);
         }
       }
       
-      // Start polling for progress
+      // Start polling ML service for progress
       pollTrainingProgress(sellerIds);
       
     } catch (error) {
@@ -95,7 +91,6 @@ const AdminDashboard = () => {
         
         setTrainingStatus(statusMap);
         
-        // Check if all training is complete
         const allComplete = statuses.every(({ status }) => 
           status.status === 'completed' || status.status === 'error'
         );
@@ -103,13 +98,15 @@ const AdminDashboard = () => {
         if (allComplete) {
           clearInterval(interval);
           setIsTraining(false);
-          alert('Training completed for all sellers!');
+          alert('Training completed!');
         }
       } catch (error) {
         console.error('Error polling training status:', error);
       }
-    }, 2000); // Poll every 2 seconds
+    }, 2000);
   };
+
+
 
   const filteredProducts = products?.filter(p => 
     p.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -208,24 +205,26 @@ const AdminDashboard = () => {
           </div>
         </div>
 
+
+
         {/* Training Progress */}
         {isTraining && Object.keys(trainingStatus).length > 0 && (
-          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
-            <h3 className="text-blue-800 dark:text-blue-200 font-semibold mb-3">Training Progress</h3>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+            <h3 className="text-blue-800 font-semibold mb-3">Training Progress</h3>
             <div className="space-y-2">
               {Object.entries(trainingStatus).map(([sellerId, status]) => (
                 <div key={sellerId} className="flex items-center gap-3">
-                  <span className="text-sm font-medium text-blue-700 dark:text-blue-300">Seller {sellerId}:</span>
-                  <div className="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                  <span className="text-sm font-medium">Seller {sellerId}:</span>
+                  <div className="flex-1 bg-gray-200 rounded-full h-2">
                     <div 
-                      className={`h-2 rounded-full transition-all duration-300 ${
+                      className={`h-2 rounded-full ${
                         status.status === 'completed' ? 'bg-green-500' : 
                         status.status === 'error' ? 'bg-red-500' : 'bg-blue-500'
                       }`}
                       style={{ width: `${status.progress || 0}%` }}
                     ></div>
                   </div>
-                  <span className="text-xs text-gray-600 dark:text-gray-400">{status.message}</span>
+                  <span className="text-xs text-gray-600">{status.message}</span>
                 </div>
               ))}
             </div>
