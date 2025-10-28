@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+torch
+torchvision
+transformers
+faiss-cpu
+opencv-python
+ultralytics
+pillow
+numpy
+python-multipart

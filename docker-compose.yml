@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Using Supabase instead of local postgres
   # postgres:
