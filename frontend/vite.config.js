@@ -9,20 +9,17 @@ export default defineConfig({
   },
   define: {
     global: 'globalThis',
-    'process.env': {},
-    'globalThis.Request': 'globalThis.Request || class Request {}'
+    'process.env': {}
   },
   optimizeDeps: {
-    include: ['simple-peer'],
-    esbuildOptions: {
-      define: {
-        global: 'globalThis'
-      }
-    }
+    include: ['simple-peer']
   },
   build: {
-    commonjsOptions: {
-      transformMixedEsModules: true
+    target: 'es2015',
+    rollupOptions: {
+      output: {
+        manualChunks: undefined
+      }
     }
   }
 })
