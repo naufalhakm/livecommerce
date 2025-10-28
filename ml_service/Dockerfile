@@ -22,6 +22,10 @@ RUN pip3 install --no-cache-dir -r requirements-gpu.txt
 
 COPY . .
 
+# Make training script executable
+RUN chmod +x train_offline.py
+
 EXPOSE 8001
 
-CMD ["python3", "app/main.py"]
+# Run training first, then start service
+CMD ["sh", "-c", "python3 train_offline.py 1 && python3 app/main.py"]
