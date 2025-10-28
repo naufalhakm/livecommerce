@@ -10,7 +10,7 @@ services:
       - SUPABASE_URL=https://aoefomhdatzkcsuowqmb.supabase.co
       - SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFvZWZvbWhkYXR6a2NzdW93cW1iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE1Mzg0MjQsImV4cCI6MjA3NzExNDQyNH0.79iinbsH4HWkb5YMrK_CAxnKMVlYZfQXzfLpapaLxZo
       - SUPABASE_STORAGE_BUCKET=products
-      - ML_SERVICE_URL=http://ml_service:8001
+      - ML_SERVICE_URL=http://100.64.5.96:7001
     volumes:
       - ./uploads:/app/uploads
 
