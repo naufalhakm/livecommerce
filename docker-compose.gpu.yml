@@ -22,13 +22,8 @@ services:
       - ./ml_service/datasets:/app/datasets
       - ./ml_service/embeddings:/app/embeddings
       - ./ml_service/models:/app/models
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    environment:
+      - PYTHONUNBUFFERED=1
 
   frontend:
     build: ./frontend
