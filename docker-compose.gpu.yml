@@ -24,8 +24,6 @@ services:
       - ./ml_service/models:/app/models
     environment:
       - PYTHONUNBUFFERED=1
-      - NVIDIA_VISIBLE_DEVICES=all
-    runtime: nvidia
 
   frontend:
     build: ./frontend
