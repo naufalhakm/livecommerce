@@ -5,6 +5,19 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Live Shopping AI</title>
+    <script>
+      // Polyfill for Request API
+      if (typeof globalThis.Request === 'undefined') {
+        globalThis.Request = class Request {
+          constructor(input, init = {}) {
+            this.url = input;
+            this.method = init.method || 'GET';
+            this.headers = init.headers || {};
+            this.body = init.body;
+          }
+        };
+      }
+    </script>
     <script src="https://unpkg.com/simple-peer@9.11.1/simplepeer.min.js"></script>
   </head>
   <body>

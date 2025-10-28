@@ -9,7 +9,8 @@ export default defineConfig({
   },
   define: {
     global: 'globalThis',
-    'process.env': {}
+    'process.env': {},
+    'globalThis.Request': 'globalThis.Request || class Request {}'
   },
   optimizeDeps: {
     include: ['simple-peer'],
