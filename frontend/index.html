@@ -6,17 +6,68 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Live Shopping AI</title>
     <script>
-      // Polyfill for Request API
-      if (typeof globalThis.Request === 'undefined') {
-        globalThis.Request = class Request {
-          constructor(input, init = {}) {
-            this.url = input;
-            this.method = init.method || 'GET';
-            this.headers = init.headers || {};
-            this.body = init.body;
-          }
-        };
-      }
+      // Comprehensive polyfill for Request/Response API
+      (function() {
+        const global = globalThis || window;
+        
+        if (!global.Request) {
+          global.Request = class Request {
+            constructor(input, init = {}) {
+              this.url = typeof input === 'string' ? input : input.url;
+              this.method = (init.method || 'GET').toUpperCase();
+              this.headers = new Headers(init.headers);
+              this.body = init.body || null;
+            }
+          };
+        }
+        
+        if (!global.Response) {
+          global.Response = class Response {
+            constructor(body, init = {}) {
+              this.body = body;
+              this.status = init.status || 200;
+              this.statusText = init.statusText || 'OK';
+              this.headers = new Headers(init.headers);
+            }
+            
+            json() {
+              return Promise.resolve(JSON.parse(this.body));
+            }
+            
+            text() {
+              return Promise.resolve(this.body);
+            }
+          };
+        }
+        
+        if (!global.Headers) {
+          global.Headers = class Headers {
+            constructor(init = {}) {
+              this._headers = {};
+              if (init) {
+                Object.entries(init).forEach(([key, value]) => {
+                  this._headers[key.toLowerCase()] = value;
+                });
+              }
+            }
+            
+            get(name) {
+              return this._headers[name.toLowerCase()];
+            }
+            
+            set(name, value) {
+              this._headers[name.toLowerCase()] = value;
+            }
+          };
+        }
+        
+        // Ensure k.global exists for the bundled code
+        if (typeof window.k === 'undefined') {
+          window.k = { global: global };
+        } else if (!window.k.global) {
+          window.k.global = global;
+        }
+      })();
     </script>
     <script src="https://unpkg.com/simple-peer@9.11.1/simplepeer.min.js"></script>
   </head>
