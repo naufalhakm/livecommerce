@@ -3,7 +3,9 @@ import os
 import sys
 import torch
 import json
+import requests
 from pathlib import Path
+from urllib.parse import urlparse
 
 def check_pytorch():
     print(f"PyTorch version: {torch.__version__}")
@@ -12,49 +14,96 @@ def check_pytorch():
         print(f"CUDA version: {torch.version.cuda}")
         print(f"GPU count: {torch.cuda.device_count()}")
 
-def train_seller_offline(seller_id):
-    """Simple offline training without CLIP"""
-    datasets_dir = Path("datasets")
-    seller_dir = datasets_dir / f"seller_{seller_id}"
+def fetch_products_from_api():
+    """Fetch all products from backend API"""
+    backend_url = os.getenv('BACKEND_URL', 'http://backend:8080')
+    try:
+        response = requests.get(f"{backend_url}/api/products")
+        if response.status_code == 200:
+            return response.json()
+        else:
+            print(f"Failed to fetch products: {response.status_code}")
+            return []
+    except Exception as e:
+        print(f"Error fetching products: {e}")
+        return []
+
+def download_image(url, filepath):
+    """Download image from URL"""
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            with open(filepath, 'wb') as f:
+                f.write(response.content)
+            return True
+    except Exception as e:
+        print(f"Error downloading {url}: {e}")
+    return False
+
+def organize_dataset():
+    """Fetch products from API and organize into dataset structure"""
+    print("Fetching products from backend API...")
+    products = fetch_products_from_api()
     
-    if not seller_dir.exists():
-        print(f"No dataset found for seller_{seller_id}")
+    if not products:
+        print("No products found from API")
         return False
     
-    print(f"Training seller_{seller_id}...")
+    datasets_dir = Path("datasets")
+    datasets_dir.mkdir(exist_ok=True)
     
-    # Count products and images
-    product_count = 0
-    image_count = 0
+    total_products = 0
+    total_images = 0
     
-    for product_dir in seller_dir.iterdir():
-        if product_dir.is_dir():
-            product_count += 1
+    # Group products by seller
+    sellers = {}
+    for product in products:
+        seller_id = f"seller_{product['seller_id']}"
+        if seller_id not in sellers:
+            sellers[seller_id] = []
+        sellers[seller_id].append(product)
+    
+    # Create dataset structure
+    for seller_id, seller_products in sellers.items():
+        seller_dir = datasets_dir / seller_id
+        seller_dir.mkdir(exist_ok=True)
+        
+        for product in seller_products:
+            product_dir = seller_dir / f"product_{product['id']}"
             images_dir = product_dir / "images"
-            if images_dir.exists():
-                image_count += len(list(images_dir.glob("*.jpg")))
+            model_dir = product_dir / "model"
+            
+            images_dir.mkdir(parents=True, exist_ok=True)
+            model_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Create metadata.json
+            metadata = {
+                "product_id": product['id'],
+                "product_name": product['name'],
+                "description": product['description'],
+                "price": product['price'],
+                "seller_id": product['seller_id']
+            }
+            
+            with open(product_dir / "metadata.json", "w") as f:
+                json.dump(metadata, f, indent=2)
+            
+            # Download images
+            if 'images' in product and product['images']:
+                for i, image in enumerate(product['images']):
+                    image_url = image['image_url']
+                    filename = f"image_{i+1}.jpg"
+                    filepath = images_dir / filename
+                    
+                    if download_image(image_url, filepath):
+                        total_images += 1
+                        print(f"Downloaded: {seller_id}/{product['name']}/{filename}")
+            
+            total_products += 1
     
-    print(f"Found {product_count} products with {image_count} images")
-    
-    # Create dummy embeddings file
-    embeddings_dir = Path("embeddings")
-    embeddings_dir.mkdir(exist_ok=True)
-    
-    dummy_result = {
-        "seller_id": seller_id,
-        "total_embeddings": image_count,
-        "unique_products": product_count,
-        "status": "completed"
-    }
-    
-    with open(embeddings_dir / f"seller_{seller_id}_embeddings.json", "w") as f:
-        json.dump(dummy_result, f)
-    
-    print(f"Training completed: {dummy_result}")
+    print(f"Dataset organized: {len(sellers)} sellers, {total_products} products, {total_images} images")
     return True
 
 if __name__ == "__main__":
     check_pytorch()
-    
-    seller_id = sys.argv[1] if len(sys.argv) > 1 else "1"
-    train_seller_offline(seller_id)
+    organize_dataset()

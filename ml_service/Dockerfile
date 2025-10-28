@@ -28,4 +28,4 @@ RUN chmod +x train_offline.py
 EXPOSE 8001
 
 # Run training first, then start service
-CMD ["sh", "-c", "python3 train_offline.py 1 && python3 app/main.py"]
+CMD ["sh", "-c", "python3 train_offline.py && python3 app/main.py"]
