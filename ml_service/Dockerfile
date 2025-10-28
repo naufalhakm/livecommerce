@@ -1,4 +1,4 @@
-FROM nvidia/cuda:11.8-runtime-ubuntu20.04
+FROM nvidia/cuda:12.2-runtime-ubuntu22.04
 
 # Install Python
 RUN apt-get update && apt-get install -y \
@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Install PyTorch with CUDA support
-RUN pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+RUN pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 
 COPY requirements-gpu.txt .
 RUN pip3 install --no-cache-dir -r requirements-gpu.txt
