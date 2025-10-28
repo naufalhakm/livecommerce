@@ -8,7 +8,7 @@ faiss-gpu
 opencv-python
 ultralytics
 pillow
-numpy
+numpy<2.0
 python-multipart
 
 # Install with CUDA support:
