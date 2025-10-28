@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.2-runtime-ubuntu22.04
+FROM nvidia/cuda:12.2-devel-ubuntu22.04
 
 # Install Python and system dependencies
 RUN apt-get update && apt-get install -y \
