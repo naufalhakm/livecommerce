@@ -1,0 +1,398 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { productAPI } from '../services/api';
+import websocketService from '../services/websocket';
+import webrtcService from '../services/webrtc';
+import { LayoutDashboard, Package, Tv, FileText, TrendingUp, Settings, LogOut, Video, Eye, Plus, Pin, Send } from 'lucide-react';
+
+const LiveStreamSeller = () => {
+  const [sellerId, setSellerId] = useState('');
+  const [hasStarted, setHasStarted] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [products, setProducts] = useState([]);
+  const [pinnedProduct, setPinnedProduct] = useState(null);
+  const [stats, setStats] = useState({
+    sales: 0,
+    orders: 0,
+    addToCart: 0,
+    watchTime: '0m 0s',
+    viewers: 0
+  });
+  const [messages, setMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState('');
+  const videoRef = useRef(null);
+
+  useEffect(() => {
+    loadProducts();
+  }, []);
+
+  const loadProducts = async () => {
+    try {
+      const response = await productAPI.getAll();
+      setProducts(response.data);
+    } catch (error) {
+      console.error('Error loading products:', error);
+    }
+  };
+
+  const initializeStream = () => {
+    if (!sellerId) {
+      alert('Please enter a seller ID');
+      return;
+    }
+    setHasStarted(true);
+    loadProducts();
+  };
+
+  const startStream = async () => {
+    try {
+      const stream = await webrtcService.initializeCamera();
+      console.log('✅ Camera initialized, stream:', stream);
+      
+      // Set streaming true first to render video element
+      setIsStreaming(true);
+      
+      // Wait for next tick to ensure video element is rendered
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          console.log('✅ Video stream set to video element');
+        } else {
+          console.error('❌ Video element still not found');
+        }
+      }, 50);
+      
+      // Setup WebRTC signaling listeners FIRST
+      console.log('🔧 Setting up WebRTC signaling listeners');
+      webrtcService.setupSignalingListeners();
+      webrtcService.signalListenersSetup = true;
+      
+      // Connect to WebSocket with seller's room
+      console.log('🔌 Connecting to WebSocket room:', sellerId);
+      websocketService.connect(`seller-${sellerId}`, sellerId);
+      
+      // Wait for WebSocket to connect
+      websocketService.on('connected', () => {
+        console.log('✅ Seller WebSocket connected, ready to receive offers');
+        websocketService.send({
+          type: 'seller_live',
+          data: { seller_id: sellerId, status: 'live' }
+        });
+      });
+    } catch (error) {
+      console.error('❌ Error starting stream:', error);
+      alert('Failed to access camera. Please check permissions.');
+    }
+  };
+
+  const endStream = () => {
+    websocketService.send({
+      type: 'seller_offline',
+      data: { seller_id: sellerId, status: 'offline' }
+    });
+    
+    webrtcService.destroy();
+    websocketService.disconnect();
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setIsStreaming(false);
+  };
+
+  const pinProduct = (product) => {
+    // Toggle pin/unpin
+    if (pinnedProduct?.id === product.id) {
+      // Unpin the product
+      setPinnedProduct(null);
+      websocketService.send({
+        type: 'unpin_product',
+        data: { seller_id: sellerId }
+      });
+    } else {
+      // Pin the product
+      setPinnedProduct(product);
+      websocketService.send({
+        type: 'pin_product',
+        data: { product, seller_id: sellerId }
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (isStreaming) {
+      websocketService.on('user_joined', (message) => {
+        console.log('Viewer joined:', message.data);
+        setStats(prev => ({ ...prev, viewers: prev.viewers + 1 }));
+      });
+      
+      websocketService.on('webrtc_offer', (message) => {
+        console.log('🎯 Seller received offer from:', message.from);
+      });
+
+      websocketService.on('user_left', (message) => {
+        console.log('Viewer left:', message.data);
+        setStats(prev => ({ ...prev, viewers: Math.max(0, prev.viewers - 1) }));
+      });
+
+      websocketService.on('chat', (message) => {
+        setMessages(prev => [...prev, message.data]);
+      });
+    }
+  }, [isStreaming]);
+
+  const sendMessage = () => {
+    if (newMessage.trim()) {
+      websocketService.sendChat(newMessage, `Seller ${sellerId}`);
+      setNewMessage('');
+    }
+  };
+
+  // Seller ID Input Screen
+  if (!hasStarted) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-gray-800 rounded-2xl p-8 border border-gray-700">
+          <div className="text-center mb-6">
+            <div className="w-16 h-16 bg-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Video className="w-8 h-8 text-white" />
+            </div>
+            <h2 className="text-white text-2xl font-bold mb-2">Start Livestream</h2>
+            <p className="text-gray-400">Enter your seller ID to create a livestream room</p>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-gray-400 text-sm font-medium mb-2">Seller ID</label>
+              <input
+                type="text"
+                value={sellerId}
+                onChange={(e) => setSellerId(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && initializeStream()}
+                placeholder="Enter your seller ID (e.g., 1)"
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg text-white px-4 py-3 focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none"
+              />
+            </div>
+
+            <button
+              onClick={initializeStream}
+              className="w-full bg-red-500 text-white font-bold py-3 rounded-lg hover:bg-red-600 transition-colors"
+            >
+              Create Stream Room
+            </button>
+
+            <button
+              onClick={() => window.location.href = '/'}
+              className="w-full bg-gray-700 text-white font-medium py-3 rounded-lg hover:bg-gray-600 transition-colors"
+            >
+              Back to Home
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-screen bg-gray-50 dark:bg-gray-900">
+      {/* Sidebar */}
+      <aside className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 p-4">
+        <div className="flex flex-col h-full">
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center gap-3 px-3">
+              <div className="w-10 h-10 bg-red-500 rounded-full flex items-center justify-center text-white font-bold">S</div>
+              <div>
+                <h1 className="text-gray-900 dark:text-white text-base font-semibold">The Seller Shop</h1>
+                <p className="text-gray-500 dark:text-gray-400 text-sm">seller@email.com</p>
+              </div>
+            </div>
+
+            <nav className="flex flex-col gap-1 mt-4">
+              <a href="/" className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                <LayoutDashboard className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                <p className="text-gray-700 dark:text-white text-sm font-medium">Dashboard</p>
+              </a>
+              <a href="/admin" className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                <Package className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                <p className="text-gray-700 dark:text-white text-sm font-medium">Product Management</p>
+              </a>
+              <a href="/seller" className="flex items-center gap-3 px-3 py-2 rounded-lg bg-red-50 dark:bg-gray-700">
+                <Tv className="w-5 h-5 text-red-500 dark:text-white" />
+                <p className="text-red-500 dark:text-white text-sm font-semibold">Live Streams</p>
+              </a>
+              <a href="#" className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                <FileText className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                <p className="text-gray-700 dark:text-white text-sm font-medium">Orders</p>
+              </a>
+              <a href="#" className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                <TrendingUp className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                <p className="text-gray-700 dark:text-white text-sm font-medium">Analytics</p>
+              </a>
+            </nav>
+          </div>
+
+          <div className="mt-auto flex flex-col gap-2">
+            <div className="border-t border-gray-200 dark:border-gray-700 my-2"></div>
+            <a href="#" className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+              <Settings className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+              <p className="text-gray-700 dark:text-white text-sm font-medium">Settings</p>
+            </a>
+            <a href="/" className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+              <LogOut className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+              <p className="text-gray-700 dark:text-white text-sm font-medium">Logout</p>
+            </a>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 grid grid-cols-12 gap-6 p-6 min-h-0">
+        <div className="col-span-12 lg:col-span-9 flex flex-col gap-6">
+          {/* Video Preview */}
+          <div className="relative w-full aspect-video bg-black rounded-xl overflow-hidden shadow-lg">
+            {!isStreaming ? (
+              <div className="absolute inset-0 flex items-center justify-center bg-gray-800">
+                <button
+                  onClick={startStream}
+                  className="px-8 py-4 bg-red-500 text-white font-bold rounded-lg hover:bg-red-600 transition-colors"
+                >
+                  Start Livestream
+                </button>
+              </div>
+            ) : (
+              <>
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover"
+                />
+                
+                <div className="absolute top-4 left-4 flex items-center gap-2">
+                  <span className="relative flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                  </span>
+                  <span className="text-white font-semibold text-sm">LIVE</span>
+                </div>
+
+                <div className="absolute top-4 right-4 flex items-center gap-2 bg-black/30 text-white px-3 py-1.5 rounded-lg backdrop-blur-sm">
+                  <Eye className="w-4 h-4" />
+                  <span className="text-sm font-medium">{stats.viewers}</span>
+                </div>
+
+                <div className="absolute bottom-4 left-4 right-4 flex justify-between items-end">
+                  <div className="text-white">
+                    <h2 className="text-lg font-bold">Live Product Showcase</h2>
+                    <p className="text-sm opacity-80">Featuring our latest products</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={endStream}
+                      className="px-6 py-2.5 rounded-full bg-red-500 text-white font-bold flex items-center gap-2 hover:bg-red-700 transition-colors"
+                    >
+                      <Video className="w-4 h-4" /> End Stream
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Products Below Video */}
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl">
+            <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+              <h3 className="font-bold text-lg dark:text-white">Products in this Stream</h3>
+              <a href="/admin" className="text-red-500 hover:text-red-600 text-sm font-medium flex items-center gap-1">
+                <Plus className="w-4 h-4" /> Add Product
+              </a>
+            </div>
+            <div className="p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+              {products?.length > 0 ? (
+                products.slice(0, 8).map((product) => (
+                  <div key={product.id} className="relative group">
+                    <div className="aspect-square bg-gray-200 dark:bg-gray-700 rounded-lg overflow-hidden mb-2">
+                      {product.images && product.images.length > 0 ? (
+                        <img src={product.images[0].image_url} alt={product.name} className="w-full h-full object-cover" />
+                      ) : product.image_url ? (
+                        <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <Package className="w-8 h-8 text-gray-400" />
+                        </div>
+                      )}
+                    </div>
+                    <p className="font-medium text-sm text-gray-800 dark:text-white truncate">{product.name}</p>
+                    <p className="font-bold text-red-500">${product.price}</p>
+                    <button
+                      onClick={() => pinProduct(product)}
+                      className={`absolute top-2 right-2 w-8 h-8 rounded-full flex items-center justify-center transition-all ${
+                        pinnedProduct?.id === product.id
+                          ? 'bg-red-500 text-white'
+                          : 'bg-white/80 dark:bg-gray-800/80 text-gray-600 dark:text-gray-400 opacity-0 group-hover:opacity-100'
+                      }`}
+                    >
+                      <Pin className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <div className="col-span-full text-center py-8 text-gray-500 dark:text-gray-400">
+                  <Package className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+                  <p>No products available</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Chat Sidebar */}
+        <div className="col-span-12 lg:col-span-3 flex flex-col bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl h-fit lg:h-[600px]">
+          <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+            <h3 className="font-bold text-lg dark:text-white">Live Chat</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">{stats.viewers} viewers</p>
+          </div>
+
+          <div className="flex-1 p-4 space-y-3 overflow-y-auto min-h-[300px] lg:min-h-0">
+            {messages.map((msg, i) => (
+              <div key={i} className="flex gap-2">
+                <div className="w-8 h-8 bg-gray-300 dark:bg-gray-600 rounded-full flex-shrink-0 flex items-center justify-center">
+                  <span className="text-xs font-bold text-gray-600 dark:text-gray-300">{msg.username?.charAt(0)}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-gray-700 dark:text-gray-300">{msg.username}</p>
+                  <p className="text-sm text-gray-900 dark:text-white break-words">{msg.message}</p>
+                </div>
+              </div>
+            ))}
+            {messages.length === 0 && (
+              <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                <p className="text-sm">No messages yet</p>
+              </div>
+            )}
+          </div>
+
+          <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                placeholder="Send a message..."
+                className="flex-1 bg-gray-100 dark:bg-gray-700 border-none rounded-lg text-gray-900 dark:text-white px-3 py-2 text-sm placeholder:text-gray-500 focus:ring-2 focus:ring-red-500 outline-none"
+              />
+              <button
+                onClick={sendMessage}
+                className="w-10 h-10 bg-red-500 rounded-lg text-white hover:bg-red-600 flex items-center justify-center transition-colors"
+              >
+                <Send className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+};
+
+export default LiveStreamSeller;

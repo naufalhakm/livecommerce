@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "7080:8080"
+    environment:
+      - DATABASE_URL=postgresql://postgres.aoefomhdatzkcsuowqmb:DFSiOWif2PCjd4X3@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require
+      - SUPABASE_URL=https://aoefomhdatzkcsuowqmb.supabase.co
+      - SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFvZWZvbWhkYXR6a2NzdW93cW1iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE1Mzg0MjQsImV4cCI6MjA3NzExNDQyNH0.79iinbsH4HWkb5YMrK_CAxnKMVlYZfQXzfLpapaLxZo
+      - SUPABASE_STORAGE_BUCKET=products
+      - ML_SERVICE_URL=http://ml_service:8001
+    volumes:
+      - ./uploads:/app/uploads
+
+  ml_service:
+    build: ./ml_service
+    ports:
+      - "7001:8001"
+    volumes:
+      - ./ml_service/datasets:/app/datasets
+      - ./ml_service/embeddings:/app/embeddings
+      - ./ml_service/models:/app/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "7000:3000"
+    environment:
+      - VITE_API_URL=http://localhost:7080
+      - VITE_WS_URL=ws://localhost:7080
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
