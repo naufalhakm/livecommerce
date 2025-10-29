@@ -24,7 +24,7 @@ services:
       - ./ml_service/models:/app/models
     environment:
       - PYTHONUNBUFFERED=1
-      - BACKEND_URL=http://100.64.5.96:7080
+      - BACKEND_URL=http://backend:8080
 
   frontend:
     build: ./frontend
