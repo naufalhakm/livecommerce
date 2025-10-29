@@ -11,6 +11,8 @@ import numpy as np
 from ultralytics import YOLO
 from PIL import Image
 import io
+from transformers import CLIPProcessor, CLIPModel
+import numpy as np
 
 def check_pytorch():
     print(f"PyTorch version: {torch.__version__}")
@@ -28,6 +30,17 @@ def init_yolo_model():
     except Exception as e:
         print(f"Error loading YOLO model: {e}")
         return None
+
+def init_clip_model():
+    """Initialize CLIP model for embedding generation"""
+    try:
+        model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+        processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+        print("CLIP model loaded successfully")
+        return model, processor
+    except Exception as e:
+        print(f"Error loading CLIP model: {e}")
+        return None, None
 
 def crop_objects_from_image(image_data, yolo_model):
     """Detect and crop objects from image using YOLO"""
@@ -61,6 +74,37 @@ def crop_objects_from_image(image_data, yolo_model):
     except Exception as e:
         print(f"Error cropping objects: {e}")
         return []
+
+def generate_image_embedding(image_data, clip_model, clip_processor):
+    """Generate CLIP embedding from image"""
+    try:
+        image = Image.open(io.BytesIO(image_data))
+        inputs = clip_processor(images=image, return_tensors="pt")
+        
+        with torch.no_grad():
+            image_features = clip_model.get_image_features(**inputs)
+            # Normalize the features
+            image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+        
+        return image_features.cpu().numpy()
+    except Exception as e:
+        print(f"Error generating image embedding: {e}")
+        return None
+
+def generate_text_embedding(text, clip_model, clip_processor):
+    """Generate CLIP embedding from text"""
+    try:
+        text_inputs = clip_processor(text=[text], return_tensors="pt")
+        
+        with torch.no_grad():
+            text_features = clip_model.get_text_features(**text_inputs)
+            # Normalize the features
+            text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+        
+        return text_features.cpu().numpy()
+    except Exception as e:
+        print(f"Error generating text embedding: {e}")
+        return None
 
 def fetch_products_from_api():
     """Fetch all products from backend API"""
@@ -98,13 +142,19 @@ def organize_dataset():
         print("No products found from API")
         return False
     
-    # Initialize YOLO model
+    # Initialize models
     yolo_model = init_yolo_model()
     if not yolo_model:
         print("Failed to load YOLO model, using original images")
     
+    clip_model, clip_processor = init_clip_model()
+    if not clip_model:
+        print("Failed to load CLIP model, skipping embedding generation")
+    
     datasets_dir = Path("datasets")
+    embeddings_dir = Path("embeddings")
     datasets_dir.mkdir(exist_ok=True)
+    embeddings_dir.mkdir(exist_ok=True)
     
     total_products = 0
     total_images = 0
@@ -126,6 +176,10 @@ def organize_dataset():
             product_dir = seller_dir / f"product_{product['id']}"
             images_dir = product_dir / "images"
             model_dir = product_dir / "model"
+            
+            # Create embedding directory for this seller
+            seller_embedding_dir = embeddings_dir / seller_id
+            seller_embedding_dir.mkdir(exist_ok=True)
             
             images_dir.mkdir(parents=True, exist_ok=True)
             model_dir.mkdir(parents=True, exist_ok=True)
@@ -180,6 +234,33 @@ def organize_dataset():
                     
                     except Exception as e:
                         print(f"Error processing image {image_url}: {e}")
+            
+            # Generate text embedding for product
+            if clip_model and clip_processor:
+                product_text = f"{product['name']} {product['description']}"
+                text_embedding = generate_text_embedding(product_text, clip_model, clip_processor)
+                
+                if text_embedding is not None:
+                    text_embedding_path = seller_embedding_dir / f"product_{product['id']}_text.npy"
+                    np.save(text_embedding_path, text_embedding)
+                    print(f"Saved text embedding: {text_embedding_path}")
+                
+                # Generate image embeddings from saved cropped images
+                for image_file in images_dir.glob("*.jpg"):
+                    try:
+                        with open(image_file, 'rb') as f:
+                            image_data = f.read()
+                        
+                        image_embedding = generate_image_embedding(image_data, clip_model, clip_processor)
+                        
+                        if image_embedding is not None:
+                            embedding_filename = f"product_{product['id']}_{image_file.stem}_image.npy"
+                            image_embedding_path = seller_embedding_dir / embedding_filename
+                            np.save(image_embedding_path, image_embedding)
+                            print(f"Saved image embedding: {embedding_filename}")
+                    
+                    except Exception as e:
+                        print(f"Error generating embedding for {image_file}: {e}")
             
             total_products += 1
     
