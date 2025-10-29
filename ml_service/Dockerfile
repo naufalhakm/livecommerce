@@ -25,6 +25,9 @@ COPY . .
 # Make training script executable
 RUN chmod +x train_offline.py
 
+# Pre-download CLIP model to avoid runtime download
+RUN python3 -c "from transformers import CLIPModel, CLIPProcessor; CLIPModel.from_pretrained('openai/clip-vit-base-patch32'); CLIPProcessor.from_pretrained('openai/clip-vit-base-patch32')"
+
 EXPOSE 8001
 
 # Run training first, then start service
