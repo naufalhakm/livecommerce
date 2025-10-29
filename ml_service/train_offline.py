@@ -17,6 +17,7 @@ def check_pytorch():
 def fetch_products_from_api():
     """Fetch all products from backend API"""
     backend_url = os.getenv('BACKEND_URL', 'http://100.64.5.96:7080')
+    print(f"Using backend URL: {backend_url}")
     try:
         response = requests.get(f"{backend_url}/api/products")
         if response.status_code == 200:
