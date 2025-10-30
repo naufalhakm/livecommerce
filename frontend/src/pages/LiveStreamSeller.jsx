@@ -49,7 +49,7 @@ const LiveStreamSeller = () => {
   const startStream = async () => {
     try {
       const stream = await webrtcService.initializeCamera();
-      console.log('✅ Camera initialized, stream:', stream);
+      console.log('Camera initialized, stream:', stream);
       
       // Set streaming true first to render video element
       setIsStreaming(true);
@@ -58,24 +58,24 @@ const LiveStreamSeller = () => {
       setTimeout(() => {
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          console.log('✅ Video stream set to video element');
+          console.log('Video stream set to video element');
         } else {
-          console.error('❌ Video element still not found');
+          console.error('Video element still not found');
         }
       }, 50);
       
       // Setup WebRTC signaling listeners FIRST
-      console.log('🔧 Setting up WebRTC signaling listeners');
+      console.log('Setting up WebRTC signaling listeners');
       webrtcService.setupSignalingListeners();
       webrtcService.signalListenersSetup = true;
       
       // Connect to WebSocket with seller's room
-      console.log('🔌 Connecting to WebSocket room:', sellerId);
+      console.log('Connecting to WebSocket room:', sellerId);
       websocketService.connect(`seller-${sellerId}`, sellerId);
       
       // Wait for WebSocket to connect
       websocketService.on('connected', () => {
-        console.log('✅ Seller WebSocket connected, ready to receive offers');
+        console.log('Seller WebSocket connected, ready to receive offers');
         websocketService.send({
           type: 'seller_live',
           data: { seller_id: sellerId, status: 'live' }
@@ -87,11 +87,11 @@ const LiveStreamSeller = () => {
       
       // Listen for auto pin updates
       websocketService.on('product_pinned', (message) => {
-        console.log('🎯 Auto pinned product:', message.data);
+        console.log('Auto pinned product:', message.data);
         loadPinnedProducts();
       });
     } catch (error) {
-      console.error('❌ Error starting stream:', error);
+      console.error('Error starting stream:', error);
       alert('Failed to access camera. Please check permissions.');
     }
   };
@@ -144,7 +144,7 @@ const LiveStreamSeller = () => {
             const response = await streamAPI.predictFrame(sellerId, blob);
             if (response.data.predictions?.length > 0) {
               setDetectedProducts(response.data.predictions);
-              console.log('🔍 Detected products:', response.data.predictions);
+              console.log('Detected products:', response.data.predictions);
             }
           } catch (error) {
             console.error('Frame processing error:', error);
@@ -193,7 +193,7 @@ const LiveStreamSeller = () => {
       });
       
       websocketService.on('webrtc_offer', (message) => {
-        console.log('🎯 Seller received offer from:', message.from);
+        console.log('Seller received offer from:', message.from);
       });
 
       websocketService.on('user_left', (message) => {
