@@ -248,14 +248,24 @@ class TrainerService:
     
     async def detect_products(self, seller_id: str, image_data: bytes):
         """Detect products in image"""
+        logger.info(f"🔍 DETECT_PRODUCTS: seller_id={seller_id}")
+        logger.info(f"📊 Available indices: {list(self.faiss_index.seller_indices.keys())}")
+        
         if seller_id not in self.faiss_index.seller_indices:
+            logger.error(f"❌ No trained model found for seller: {seller_id}")
             raise ValueError(f"No trained model found for seller: {seller_id}")
         
+        logger.info(f"✅ Found model for {seller_id}")
+        
         # Convert bytes to PIL Image
+        logger.info(f"📷 Converting image data to PIL Image")
         image = Image.open(io.BytesIO(image_data)).convert('RGB')
+        logger.info(f"📷 Image size: {image.size}")
         
         # YOLO detection
+        logger.info(f"🤖 Running YOLO detection")
         detections = self.yolo_detector.detect(image)
+        logger.info(f"🎯 YOLO found {len(detections)} detections")
         
         predictions = []
         for detection in detections:
@@ -265,8 +275,11 @@ class TrainerService:
             detected_region = image.crop((int(x1), int(y1), int(x2), int(y2)))
             
             # Get embedding and search
+            logger.info(f"🧪 Extracting CLIP embedding for detection {len(predictions)+1}")
             embedding = self.clip_extractor.extract_embedding(detected_region)
+            logger.info(f"🔍 Searching FAISS index for {seller_id}")
             results = self.faiss_index.search(seller_id, embedding, k=1)
+            logger.info(f"📊 FAISS results: {results}")
             
             if results:
                 result = results[0]
@@ -278,4 +291,5 @@ class TrainerService:
                     "similarity_score": result["similarity_score"]
                 })
         
+        logger.info(f"✅ Final predictions: {len(predictions)} items")
         return {"predictions": predictions}

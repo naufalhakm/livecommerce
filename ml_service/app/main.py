@@ -55,23 +55,36 @@ async def run_training_pipeline(seller_id: str):
 async def predict_products(seller_id: str = Form(...), file: UploadFile = File(...)):
     """Predict products in live stream frame - PRODUCTION ENDPOINT"""
     try:
-        # Check if model is trained for this seller
-        if seller_id not in faiss_index.seller_indices:
+        logger.info(f"🔍 PREDICT REQUEST: seller_id={seller_id}, file={file.filename}")
+        
+        # Convert seller_id to seller_X format for FAISS lookup
+        seller_key = f"seller_{seller_id}"
+        logger.info(f"🔑 Converted to seller_key: {seller_key}")
+        logger.info(f"📊 Available sellers: {list(faiss_index.seller_indices.keys())}")
+        
+        if seller_key not in faiss_index.seller_indices:
+            logger.warning(f"❌ No model found for {seller_key}")
             return {
                 'predictions': [],
                 'total_detections': 0,
                 'message': f'No trained model found for seller {seller_id}. Please train first.'
             }
         
+        logger.info(f"✅ Model found for {seller_key}")
         image_data = await file.read()
-        result = await trainer_service.detect_products(seller_id, image_data)
+        logger.info(f"📷 Image size: {len(image_data)} bytes")
+        
+        result = await trainer_service.detect_products(seller_key, image_data)
+        logger.info(f"🎯 Detection result: {result}")
         
         return {
             'predictions': result.get('predictions', []),
             'total_detections': len(result.get('predictions', []))
         }
     except Exception as e:
-        logger.error(f"Prediction error: {e}")
+        logger.error(f"❌ Prediction error: {e}")
+        import traceback
+        logger.error(f"📋 Traceback: {traceback.format_exc()}")
         return {
             'predictions': [],
             'total_detections': 0,
