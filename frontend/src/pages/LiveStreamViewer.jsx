@@ -19,6 +19,7 @@ const LiveStreamViewer = () => {
   const [isMuted, setIsMuted] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [reactions, setReactions] = useState([]);
+  const [streamEnded, setStreamEnded] = useState(false);
   const videoRef = useRef(null);
   const videoContainerRef = useRef(null);
   const initialized = useRef(false);
@@ -131,6 +132,12 @@ const LiveStreamViewer = () => {
         setTimeout(() => {
           setReactions(prev => prev.filter(r => r.id !== newReaction.id));
         }, 3000);
+      });
+
+      websocketService.on('seller_offline', (message) => {
+        console.log('Seller went offline:', message.data);
+        setStreamEnded(true);
+        setIsPlaying(false);
       });
 
       websocketService.on('user_joined', (message) => {
@@ -285,17 +292,35 @@ const LiveStreamViewer = () => {
             {!isPlaying && (
               <div className="absolute inset-0 w-full h-full bg-gray-800 flex items-center justify-center">
                 <div className="text-center">
-                  <div className="w-16 h-16 bg-black/40 rounded-full flex items-center justify-center text-white mx-auto mb-4 animate-pulse">
-                    <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  </div>
-                  <p className="text-gray-400 animate-pulse">Connecting to Seller {sellerId}...</p>
-                  <div className="flex justify-center mt-3">
-                    <div className="flex space-x-1">
-                      <div className="w-2 h-2 bg-red-500 rounded-full animate-bounce"></div>
-                      <div className="w-2 h-2 bg-red-500 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-                      <div className="w-2 h-2 bg-red-500 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
-                    </div>
-                  </div>
+                  {streamEnded ? (
+                    <>
+                      <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center text-white mx-auto mb-4">
+                        <Tv className="w-8 h-8 text-red-500" />
+                      </div>
+                      <p className="text-red-400 text-lg font-semibold mb-2">Stream Ended</p>
+                      <p className="text-gray-400">Seller {sellerId} has ended the livestream</p>
+                      <button
+                        onClick={() => navigate('/')}
+                        className="mt-4 px-6 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                      >
+                        Back to Home
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <div className="w-16 h-16 bg-black/40 rounded-full flex items-center justify-center text-white mx-auto mb-4 animate-pulse">
+                        <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      </div>
+                      <p className="text-gray-400 animate-pulse">Connecting to Seller {sellerId}...</p>
+                      <div className="flex justify-center mt-3">
+                        <div className="flex space-x-1">
+                          <div className="w-2 h-2 bg-red-500 rounded-full animate-bounce"></div>
+                          <div className="w-2 h-2 bg-red-500 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                          <div className="w-2 h-2 bg-red-500 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             )}
