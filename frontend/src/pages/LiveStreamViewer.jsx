@@ -81,26 +81,35 @@ const LiveStreamViewer = () => {
 
       websocketService.on('product_detection', (message) => {
         console.log('🔍 Product detection:', message.data);
-        if (message.data.predictions?.length > 0) {
-          // Show detected product temporarily
-          const topPrediction = message.data.predictions[0];
-          if (topPrediction.similarity_score > 0.8) {
-            setPinnedProduct({
-              name: topPrediction.product_name,
-              price: topPrediction.price || 'N/A',
-              similarity_score: topPrediction.similarity_score
-            });
-          }
-        }
+        // Don't auto-pin from detection, only from explicit pin events
       });
 
-      websocketService.on('product_pinned', (message) => {
+      websocketService.on('product_pinned', async (message) => {
         console.log('🎯 Auto pinned product:', message.data);
-        setPinnedProduct({
-          name: message.data.product_name,
-          price: message.data.price || 'N/A',
-          similarity_score: message.data.similarity_score
-        });
+        
+        // Only update pin if similarity is high enough (80% or higher)
+        if (message.data.similarity_score < 0.8) {
+          console.log('⚠️ Similarity too low, not updating pin:', message.data.similarity_score);
+          return;
+        }
+        
+        try {
+          // Fetch full product details from API
+          const response = await fetch(`http://100.64.5.96:7080/api/products/${message.data.product_id}`);
+          if (response.ok) {
+            const productData = await response.json();
+            setPinnedProduct({
+              ...productData,
+              similarity_score: message.data.similarity_score
+            });
+            console.log('✅ Product pinned with high similarity:', message.data.similarity_score);
+          } else {
+            console.log('❌ Product not found in API, not updating pin');
+          }
+        } catch (error) {
+          console.error('Error fetching product details:', error);
+          console.log('❌ API error, not updating pin');
+        }
       });
 
       websocketService.on('pin_product', (message) => {
@@ -265,10 +274,17 @@ const LiveStreamViewer = () => {
             {!isPlaying && (
               <div className="absolute inset-0 w-full h-full bg-gray-800 flex items-center justify-center">
                 <div className="text-center">
-                  <div className="w-16 h-16 bg-black/40 rounded-full flex items-center justify-center text-white mx-auto mb-4">
-                    <span className="text-4xl ml-1">▶</span>
+                  <div className="w-16 h-16 bg-black/40 rounded-full flex items-center justify-center text-white mx-auto mb-4 animate-pulse">
+                    <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                   </div>
-                  <p className="text-gray-400">Connecting to Seller {sellerId}...</p>
+                  <p className="text-gray-400 animate-pulse">Connecting to Seller {sellerId}...</p>
+                  <div className="flex justify-center mt-3">
+                    <div className="flex space-x-1">
+                      <div className="w-2 h-2 bg-red-500 rounded-full animate-bounce"></div>
+                      <div className="w-2 h-2 bg-red-500 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                      <div className="w-2 h-2 bg-red-500 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
