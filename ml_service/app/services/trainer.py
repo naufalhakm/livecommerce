@@ -269,11 +269,22 @@ class TrainerService:
         logger.info(f"🎯 YOLO found {len(detections)} detections")
         
         predictions = []
+        all_detections = []
+        
+        # Process YOLO detections (now returns structured data)
         for detection in detections:
-            x1, y1, x2, y2, conf = detection
+            # Skip person class for product detection
+            if detection.get('class_id') == 0:
+                continue
+                
+            bbox = detection['bbox']
+            x1, y1, x2, y2 = bbox
             
-            # Extract detected region
-            detected_region = image.crop((int(x1), int(y1), int(x2), int(y2)))
+            # Add to all detections for object tracking
+            all_detections.append(detection)
+            
+            # Extract detected region for product recognition
+            detected_region = image.crop((x1, y1, x2, y2))
             
             # Get embedding and search
             logger.info(f"🧪 Extracting CLIP embedding for detection {len(predictions)+1}")
@@ -282,19 +293,22 @@ class TrainerService:
             results = self.faiss_index.search(seller_id, embedding, k=1)
             logger.info(f"📊 FAISS results: {results}")
             
-            if results:
+            if results and results[0]["similarity_score"] > 0.7:  # Threshold for product match
                 result = results[0]
                 # Extract numeric product ID from product_X format
                 product_id_str = result["product_id"].replace("product_", "")
                 
                 predictions.append({
-                    "bbox": [int(x1), int(y1), int(x2), int(y2)],
+                    "bbox": bbox,
                     "product_id": product_id_str,
                     "product_name": result["product_name"],
                     "price": result.get("price", 0.0),
-                    "confidence": float(conf),
+                    "confidence": detection['confidence'],
                     "similarity_score": result["similarity_score"]
                 })
         
-        logger.info(f"✅ Final predictions: {len(predictions)} items")
-        return {"predictions": predictions}
+        logger.info(f"✅ Final predictions: {len(predictions)} items, detections: {len(all_detections)}")
+        return {
+            "predictions": predictions,
+            "detections": all_detections
+        }

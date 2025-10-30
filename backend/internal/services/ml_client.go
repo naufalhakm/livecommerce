@@ -23,6 +23,14 @@ type PredictionResponse struct {
 		Confidence      float64 `json:"confidence"`
 		SimilarityScore float64 `json:"similarity_score"`
 	} `json:"predictions"`
+	Detections []struct {
+		BBox       []int   `json:"bbox"`
+		Confidence float64 `json:"confidence"`
+		Class      string  `json:"class"`
+		ClassID    int     `json:"class_id"`
+	} `json:"detections"`
+	TotalDetections int `json:"total_detections"`
+	TotalProducts   int `json:"total_products"`
 }
 
 type TrainingResponse struct {
@@ -122,4 +130,9 @@ func (c *MLClient) GetTrainingStatus(sellerID string) (map[string]interface{}, e
 	}
 
 	return result, nil
+}
+
+func (c *MLClient) ProcessStreamFrame(sellerID string, imageData []byte) (*PredictionResponse, error) {
+	"""Process live stream frame for object detection and product recognition"""
+	return c.PredictProduct(sellerID, imageData)
 }

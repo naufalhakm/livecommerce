@@ -7,7 +7,7 @@ class YOLODetector:
         self.model = YOLO(model_path)
     
     def detect(self, image: Image.Image):
-        """Detect objects in image and return bounding boxes"""
+        """Detect objects in image and return bounding boxes with class info"""
         results = self.model(np.array(image))
         
         detections = []
@@ -17,6 +17,14 @@ class YOLODetector:
                 for box in boxes:
                     x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
                     conf = box.conf[0].cpu().numpy()
-                    detections.append([x1, y1, x2, y2, conf])
+                    cls = int(box.cls[0].cpu().numpy())
+                    class_name = self.model.names[cls]
+                    
+                    detections.append({
+                        'bbox': [int(x1), int(y1), int(x2), int(y2)],
+                        'confidence': float(conf),
+                        'class': class_name,
+                        'class_id': cls
+                    })
         
         return detections

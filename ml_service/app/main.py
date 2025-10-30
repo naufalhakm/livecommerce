@@ -90,7 +90,9 @@ async def predict_products(seller_id: str = Form(...), file: UploadFile = File(.
         
         return {
             'predictions': result.get('predictions', []),
-            'total_detections': len(result.get('predictions', []))
+            'detections': result.get('detections', []),
+            'total_detections': len(result.get('detections', [])),
+            'total_products': len(result.get('predictions', []))
         }
     except Exception as e:
         logger.error(f"❌ Prediction error: {e}")

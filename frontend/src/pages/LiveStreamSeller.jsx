@@ -12,6 +12,7 @@ const LiveStreamSeller = () => {
   const [products, setProducts] = useState([]);
   const [pinnedProduct, setPinnedProduct] = useState(null);
   const [detectedProducts, setDetectedProducts] = useState([]);
+  const [detectedObjects, setDetectedObjects] = useState([]);
   const [isProcessingFrame, setIsProcessingFrame] = useState(false);
   const [reactions, setReactions] = useState([]);
   const [currentCamera, setCurrentCamera] = useState('user'); // 'user' = front, 'environment' = back
@@ -153,12 +154,27 @@ const LiveStreamSeller = () => {
         if (blob) {
           try {
             const response = await streamAPI.predictFrame(sellerId, blob);
+            console.log('ML Response:', response.data);
+            
+            // Update detected products (recognized products)
             if (response.data.predictions?.length > 0) {
               setDetectedProducts(response.data.predictions);
               console.log('Detected products:', response.data.predictions);
+            } else {
+              setDetectedProducts([]);
+            }
+            
+            // Update detected objects (all YOLO detections)
+            if (response.data.detections?.length > 0) {
+              setDetectedObjects(response.data.detections);
+              console.log('Detected objects:', response.data.detections);
+            } else {
+              setDetectedObjects([]);
             }
           } catch (error) {
             console.error('Frame processing error:', error);
+            setDetectedProducts([]);
+            setDetectedObjects([]);
           }
         }
         setIsProcessingFrame(false);
@@ -377,13 +393,86 @@ const LiveStreamSeller = () => {
               </div>
             ) : (
               <>
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="w-full h-full object-cover"
-                />
+                <div className="relative w-full h-full">
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-full object-cover"
+                  />
+                  
+                  {/* Object Detection Bounding Boxes */}
+                  {detectedObjects.map((obj, index) => {
+                    if (!videoRef.current) return null;
+                    
+                    const videoRect = videoRef.current.getBoundingClientRect();
+                    const videoWidth = videoRef.current.videoWidth || 640;
+                    const videoHeight = videoRef.current.videoHeight || 480;
+                    
+                    const scaleX = videoRect.width / videoWidth;
+                    const scaleY = videoRect.height / videoHeight;
+                    
+                    const [x1, y1, x2, y2] = obj.bbox;
+                    const left = x1 * scaleX;
+                    const top = y1 * scaleY;
+                    const width = (x2 - x1) * scaleX;
+                    const height = (y2 - y1) * scaleY;
+                    
+                    return (
+                      <div
+                        key={`obj-${index}`}
+                        className="absolute border-2 border-blue-400 bg-blue-400/10"
+                        style={{
+                          left: `${left}px`,
+                          top: `${top}px`,
+                          width: `${width}px`,
+                          height: `${height}px`,
+                        }}
+                      >
+                        <div className="absolute -top-6 left-0 bg-blue-500 text-white text-xs px-2 py-1 rounded">
+                          {obj.class} ({Math.round(obj.confidence * 100)}%)
+                        </div>
+                      </div>
+                    );
+                  })}
+                  
+                  {/* Product Recognition Bounding Boxes */}
+                  {detectedProducts.map((product, index) => {
+                    if (!videoRef.current) return null;
+                    
+                    const videoRect = videoRef.current.getBoundingClientRect();
+                    const videoWidth = videoRef.current.videoWidth || 640;
+                    const videoHeight = videoRef.current.videoHeight || 480;
+                    
+                    const scaleX = videoRect.width / videoWidth;
+                    const scaleY = videoRect.height / videoHeight;
+                    
+                    const [x1, y1, x2, y2] = product.bbox;
+                    const left = x1 * scaleX;
+                    const top = y1 * scaleY;
+                    const width = (x2 - x1) * scaleX;
+                    const height = (y2 - y1) * scaleY;
+                    
+                    return (
+                      <div
+                        key={`product-${index}`}
+                        className="absolute border-2 border-green-400 bg-green-400/10"
+                        style={{
+                          left: `${left}px`,
+                          top: `${top}px`,
+                          width: `${width}px`,
+                          height: `${height}px`,
+                        }}
+                      >
+                        <div className="absolute -top-12 left-0 bg-green-500 text-white text-xs px-2 py-1 rounded max-w-48">
+                          <div className="font-semibold">{product.product_name}</div>
+                          <div>${product.price} ({Math.round(product.similarity_score * 100)}%)</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
                 
                 <div className="absolute top-4 left-4 flex items-center gap-2">
                   <span className="relative flex h-3 w-3">
@@ -399,13 +488,18 @@ const LiveStreamSeller = () => {
                     <span className="text-sm font-medium">{stats.viewers}</span>
                   </div>
                   {isProcessingFrame && (
-                    <div className="bg-blue-500/80 text-white px-3 py-1.5 rounded-lg backdrop-blur-sm">
+                    <div className="bg-purple-500/80 text-white px-3 py-1.5 rounded-lg backdrop-blur-sm">
                       <span className="text-xs font-medium">AI Processing...</span>
+                    </div>
+                  )}
+                  {detectedObjects.length > 0 && (
+                    <div className="bg-blue-500/80 text-white px-3 py-1.5 rounded-lg backdrop-blur-sm">
+                      <span className="text-xs font-medium">{detectedObjects.length} Objects</span>
                     </div>
                   )}
                   {detectedProducts.length > 0 && (
                     <div className="bg-green-500/80 text-white px-3 py-1.5 rounded-lg backdrop-blur-sm">
-                      <span className="text-xs font-medium">{detectedProducts.length} Products Detected</span>
+                      <span className="text-xs font-medium">{detectedProducts.length} Products</span>
                     </div>
                   )}
                 </div>
