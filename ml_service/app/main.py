@@ -38,25 +38,28 @@ training_status = {}
 async def train_model(seller_id: str, background_tasks: BackgroundTasks):
     """Train model for all products from backend API"""
     try:
-        training_status[seller_id] = {"status": "training", "progress": 0, "message": "Starting training..."}
-        background_tasks.add_task(run_training_pipeline, seller_id)
+        # Use seller_X format for consistency
+        seller_key = f"seller_{seller_id}"
+        training_status[seller_key] = {"status": "training", "progress": 0, "message": "Starting training..."}
+        background_tasks.add_task(run_training_pipeline, seller_key)
         return {"status": "training_started", "seller_id": seller_id}
     except Exception as e:
-        training_status[seller_id] = {"status": "error", "message": str(e)}
+        seller_key = f"seller_{seller_id}"
+        training_status[seller_key] = {"status": "error", "message": str(e)}
         raise HTTPException(status_code=500, detail=str(e))
 
-async def run_training_pipeline(seller_id: str):
+async def run_training_pipeline(seller_key: str):
     """Run complete training pipeline"""
     try:
-        training_status[seller_id] = {"status": "training", "progress": 20, "message": "Fetching products from API..."}
+        training_status[seller_key] = {"status": "training", "progress": 20, "message": "Fetching products from API..."}
         
         # Train all sellers from API
         results = await trainer_service.train_all_sellers()
         
-        training_status[seller_id] = {"status": "completed", "progress": 100, 
+        training_status[seller_key] = {"status": "completed", "progress": 100, 
                                     "message": f"Training completed for all sellers: {list(results.keys())}"}
     except Exception as e:
-        training_status[seller_id] = {"status": "error", "progress": 0, "message": str(e)}
+        training_status[seller_key] = {"status": "error", "progress": 0, "message": str(e)}
 
 @app.post("/predict")
 async def predict_products(seller_id: str = Form(...), file: UploadFile = File(...)):
@@ -156,7 +159,8 @@ async def get_model_info():
 @app.get("/training-status/{seller_id}")
 async def get_training_status(seller_id: str):
     """Get training status for seller"""
-    return training_status.get(seller_id, {"status": "not_started"})
+    seller_key = f"seller_{seller_id}" if not seller_id.startswith('seller_') else seller_id
+    return training_status.get(seller_key, {"status": "not_started"})
 
 @app.get("/health")
 async def health_check():
