@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { productAPI, streamAPI, pinAPI } from '../services/api';
 import websocketService from '../services/websocket';
 import webrtcService from '../services/webrtc';
@@ -12,6 +13,7 @@ const LiveStreamSeller = () => {
   const [pinnedProduct, setPinnedProduct] = useState(null);
   const [detectedProducts, setDetectedProducts] = useState([]);
   const [isProcessingFrame, setIsProcessingFrame] = useState(false);
+  const [reactions, setReactions] = useState([]);
   const [stats, setStats] = useState({
     sales: 0,
     orders: 0,
@@ -204,6 +206,19 @@ const LiveStreamSeller = () => {
       websocketService.on('chat', (message) => {
         setMessages(prev => [...prev, message.data]);
       });
+
+      websocketService.on('reaction', (message) => {
+        const newReaction = {
+          id: Date.now() + Math.random(),
+          emoji: message.data.emoji,
+          x: Math.random() * 80 + 10,
+        };
+        setReactions(prev => [...prev, newReaction]);
+        
+        setTimeout(() => {
+          setReactions(prev => prev.filter(r => r.id !== newReaction.id));
+        }, 3000);
+      });
     }
   }, [isStreaming]);
 
@@ -358,6 +373,25 @@ const LiveStreamSeller = () => {
                       <span className="text-xs font-medium">{detectedProducts.length} Products Detected</span>
                     </div>
                   )}
+                </div>
+
+                {/* Floating Reactions */}
+                <div className="absolute inset-0 pointer-events-none overflow-hidden">
+                  <AnimatePresence>
+                    {reactions.map((reaction) => (
+                      <motion.div
+                        key={reaction.id}
+                        className="absolute bottom-20 text-4xl"
+                        style={{ left: `${reaction.x}%` }}
+                        initial={{ opacity: 1, y: 0, scale: 0.8 }}
+                        animate={{ opacity: 0, y: -200, scale: 1.2 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 3, ease: "easeOut" }}
+                      >
+                        {reaction.emoji}
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
                 </div>
 
                 <div className="absolute bottom-4 left-4 right-4 flex justify-between items-end">

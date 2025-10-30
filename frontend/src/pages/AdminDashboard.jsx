@@ -262,9 +262,7 @@ const AdminDashboard = () => {
           <table className="w-full">
             <thead className="bg-gray-50 dark:bg-gray-900">
               <tr>
-                <th className="px-6 py-4 text-left w-12">
-                  <input type="checkbox" className="w-5 h-5 rounded border-gray-300 dark:border-gray-600" />
-                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase">ID</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase">Product</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase">Images</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase">Price</th>
@@ -275,8 +273,8 @@ const AdminDashboard = () => {
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {filteredProducts.map((product) => (
                 <tr key={product.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                  <td className="px-6 py-4">
-                    <input type="checkbox" className="w-5 h-5 rounded border-gray-300 dark:border-gray-600" />
+                  <td className="px-6 py-4 text-sm font-medium text-gray-900 dark:text-white">
+                    #{product.id}
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-4">
@@ -332,7 +330,7 @@ const AdminDashboard = () => {
               ))}
               {filteredProducts.length === 0 && (
                 <tr>
-                  <td colSpan="7" className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan="6" className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
                     No products found. Add your first product to get started.
                   </td>
                 </tr>
