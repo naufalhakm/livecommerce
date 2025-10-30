@@ -56,14 +56,16 @@ const AdminDashboard = () => {
     try {
       const sellerIds = [...new Set(products.map(p => p.seller_id))];
       
-      for (const sellerId of sellerIds) {
-        const sellerProduct = products.find(p => p.seller_id === sellerId);
-        if (sellerProduct) {
-          await productAPI.train(sellerProduct.id);
-        }
+      // Use backend train endpoint
+      const response = await fetch('http://100.64.5.96:7080/api/train?seller_id=1', {
+        method: 'POST'
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to start training');
       }
       
-      // Start polling ML service for progress
+      // Start polling backend for progress
       pollTrainingProgress(sellerIds);
       
     } catch (error) {
@@ -77,7 +79,7 @@ const AdminDashboard = () => {
     const interval = setInterval(async () => {
       try {
         const statusPromises = sellerIds.map(async (sellerId) => {
-          const response = await fetch(`http://100.64.5.96:7001/training-status/seller_${sellerId}`);
+          const response = await fetch(`http://100.64.5.96:7080/api/training-status/seller_${sellerId}`);
           const status = await response.json();
           return { sellerId, status };
         });
