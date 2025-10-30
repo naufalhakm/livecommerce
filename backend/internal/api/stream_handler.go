@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 
 	"live-shopping-ai/backend/internal/db"
@@ -218,6 +217,25 @@ func (h *StreamHandler) PredictFrame(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	// Auto pin/unpin products based on predictions
+	if len(result.Predictions) > 0 {
+		for _, prediction := range result.Predictions {
+			if prediction.SimilarityScore > 0.8 { // High confidence threshold
+				// Auto pin product
+				h.autoPinProduct(prediction.ProductName, sellerID, prediction.SimilarityScore)
+			}
+		}
+		
+		// Broadcast detection results to seller's room
+		h.hub.BroadcastToRoom(sellerID, services.Message{
+			Type: "product_detection",
+			Data: map[string]interface{}{
+				"seller_id":   sellerID,
+				"predictions": result.Predictions,
+			},
+		})
 	}
 
 	c.JSON(http.StatusOK, result)
