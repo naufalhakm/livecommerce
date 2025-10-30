@@ -224,7 +224,8 @@ class TrainerService:
                         embeddings.append(embedding)
                         product_metadata.append({
                             "product_id": product_id,
-                            "product_name": product_name
+                            "product_name": product_name,
+                            "price": metadata.get("price", 0.0)
                         })
                     except Exception as e:
                         logger.error(f"Error processing {img_file}: {e}")
@@ -283,10 +284,14 @@ class TrainerService:
             
             if results:
                 result = results[0]
+                # Extract numeric product ID from product_X format
+                product_id_str = result["product_id"].replace("product_", "")
+                
                 predictions.append({
                     "bbox": [int(x1), int(y1), int(x2), int(y2)],
-                    "product_id": result["product_id"],
+                    "product_id": product_id_str,
                     "product_name": result["product_name"],
+                    "price": result.get("price", 0.0),
                     "confidence": float(conf),
                     "similarity_score": result["similarity_score"]
                 })

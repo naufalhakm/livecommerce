@@ -172,7 +172,7 @@ func (h *StreamHandler) ProcessStreamFrame(c *gin.Context) {
 		for _, prediction := range result.Predictions {
 			if prediction.SimilarityScore > 0.8 { // High confidence threshold
 				// Auto pin product
-				h.autoPinProduct(prediction.ProductName, sellerID, prediction.SimilarityScore)
+				h.autoPinProduct(prediction.ProductID, sellerID, prediction.SimilarityScore)
 			}
 		}
 		
@@ -224,7 +224,7 @@ func (h *StreamHandler) PredictFrame(c *gin.Context) {
 		for _, prediction := range result.Predictions {
 			if prediction.SimilarityScore > 0.8 { // High confidence threshold
 				// Auto pin product
-				h.autoPinProduct(prediction.ProductName, sellerID, prediction.SimilarityScore)
+				h.autoPinProduct(prediction.ProductID, sellerID, prediction.SimilarityScore)
 			}
 		}
 		
@@ -241,13 +241,13 @@ func (h *StreamHandler) PredictFrame(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-func (h *StreamHandler) autoPinProduct(productName, sellerID string, similarityScore float64) {
-	// Find product by name and seller
-	query := `SELECT id FROM products WHERE name ILIKE $1 AND seller_id = $2 LIMIT 1`
-	var productID int
-	err := db.DB.QueryRow(context.Background(), query, "%"+productName+"%", sellerID).Scan(&productID)
+func (h *StreamHandler) autoPinProduct(productID, sellerID string, similarityScore float64) {
+	// Convert productID from string to int
+	var dbProductID int
+	query := `SELECT id FROM products WHERE id = $1 AND seller_id = $2 LIMIT 1`
+	err := db.DB.QueryRow(context.Background(), query, productID, sellerID).Scan(&dbProductID)
 	if err != nil {
-		logger.Printf("Product not found for auto-pin: %s", productName)
+		logger.Printf("Product not found for auto-pin: %s", productID)
 		return
 	}
 
@@ -262,14 +262,13 @@ func (h *StreamHandler) autoPinProduct(productName, sellerID string, similarityS
 		ON CONFLICT (product_id, seller_id) 
 		DO UPDATE SET similarity_score = $3, is_pinned = true, pinned_at = CURRENT_TIMESTAMP
 	`
-	db.DB.Exec(context.Background(), pinQuery, productID, sellerID, similarityScore)
+	db.DB.Exec(context.Background(), pinQuery, dbProductID, sellerID, similarityScore)
 
 	// Broadcast pin update
 	h.hub.BroadcastToRoom(sellerID, services.Message{
 		Type: "product_pinned",
 		Data: map[string]interface{}{
-			"product_id":       productID,
-			"product_name":     productName,
+			"product_id":       dbProductID,
 			"similarity_score": similarityScore,
 		},
 	})
