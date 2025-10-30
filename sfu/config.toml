@@ -1,16 +1,20 @@
-[sfu]
-ballast = "1mb"
-
-[router]
-maxbandwidth = "1000mb"
-maxpackettrack = 500
-
 [webrtc]
-candidates = ["0.0.0.0:5000-5100"]
-portrange = [5000, 5100]
-
-[turn]
-enabled = false
+iceportrange = [5000, 5100]
+# Use your server's public IP
+icecandidates = ["YOUR_SERVER_PUBLIC_IP"]
+# Enable STUN for NAT traversal
+stun = ["stun:stun.l.google.com:19302"]
 
 [log]
-level = "info"
+level = "warn"
+stats = true
+
+[router]
+# Limit bandwidth per connection
+maxbandwidth = "2mb"
+# Max tracks per subscriber
+maxpackettrack = 200
+
+[turn]
+# Disable TURN for now (can enable with credentials later)
+enabled = false
