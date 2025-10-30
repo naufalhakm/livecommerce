@@ -145,7 +145,8 @@ class WebRTCService {
     });
 
     peer.on('connect', () => {
-      console.log('WebRTC connection established with:', targetClientId);
+      console.log('✅ WebRTC connection established with:', targetClientId);
+      console.log('📊 Total active connections:', this.peers.size);
       if (this.onConnect) {
         this.onConnect();
       }
@@ -159,8 +160,9 @@ class WebRTCService {
     });
 
     peer.on('close', () => {
-      console.log('Peer closed:', targetClientId);
+      console.log('🔴 Peer closed:', targetClientId);
       this.peers.delete(targetClientId);
+      console.log('📊 Remaining connections:', this.peers.size);
     });
 
     // Signaling listeners are set up globally, not per peer
@@ -202,6 +204,8 @@ class WebRTCService {
         this.peers.delete(message.from);
         console.log('Cleaned up existing peer for:', message.from);
       }
+      
+      console.log('📊 SELLER: Current active peers:', this.peers.size);
       
       try {
         // Seller responds to viewer's offer (seller is not initiator)

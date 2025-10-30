@@ -65,6 +65,13 @@ const LiveStreamSeller = () => {
       if (source === 'screen') {
         stream = await webrtcService.initializeScreenShare();
         console.log('Screen sharing initialized, stream:', stream);
+        
+        // Listen for screen share end
+        stream.getVideoTracks()[0].addEventListener('ended', () => {
+          console.log('Screen sharing ended by user');
+          alert('Screen sharing ended. Redirecting to dashboard...');
+          window.location.href = '/';
+        });
       } else {
         stream = await webrtcService.initializeCamera(currentCamera);
         console.log('Camera initialized, stream:', stream);
@@ -144,6 +151,11 @@ const LiveStreamSeller = () => {
     // Stop frame processing
     if (frameProcessingRef.current) {
       clearInterval(frameProcessingRef.current);
+    }
+    
+    // Stop all tracks
+    if (videoRef.current && videoRef.current.srcObject) {
+      videoRef.current.srcObject.getTracks().forEach(track => track.stop());
     }
     
     webrtcService.destroy();
@@ -244,14 +256,20 @@ const LiveStreamSeller = () => {
       websocketService.on('user_joined', (message) => {
         console.log('Viewer joined:', message.data);
         setStats(prev => ({ ...prev, viewers: prev.viewers + 1 }));
+        
+        // Ensure stream is available for new viewers
+        if (videoRef.current && videoRef.current.srcObject) {
+          webrtcService.localStream = videoRef.current.srcObject;
+          console.log('🔄 SELLER: Stream refreshed for new viewer');
+        }
       });
       
       websocketService.on('webrtc_offer', (message) => {
         console.log('🔥 SELLER: Received WebRTC offer from viewer:', message.from);
         
-        // Ensure WebRTC service has the current stream
+        // Ensure WebRTC service has the current stream for each viewer
         if (videoRef.current && videoRef.current.srcObject) {
-          console.log('🔧 SELLER: Setting stream to WebRTC service from video element');
+          console.log('🔧 SELLER: Setting stream to WebRTC service for viewer:', message.from);
           webrtcService.localStream = videoRef.current.srcObject;
           console.log('✅ SELLER: Stream set with', webrtcService.localStream.getTracks().length, 'tracks');
         }

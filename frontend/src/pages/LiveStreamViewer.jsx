@@ -92,6 +92,10 @@ const LiveStreamViewer = () => {
       const handleConnected = async () => {
         try {
           console.log('🔗 VIEWER: WebSocket connected, joining broadcast...');
+          
+          // Add small delay to ensure seller is ready
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
           // Use seller's client ID format for WebRTC connection
           await webrtcService.joinBroadcast(`seller-${sellerId}`);
           console.log('🎯 VIEWER: Looking for seller with client_id: seller-' + sellerId + ' in room: ' + sellerId);
