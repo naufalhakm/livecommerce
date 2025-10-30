@@ -35,7 +35,7 @@ type TrainingResponse struct {
 func NewMLClient() *MLClient {
 	baseURL := os.Getenv("ML_SERVICE_URL")
 	if baseURL == "" {
-		baseURL = "http://100.64.5.96:8001"
+		baseURL = "http://ml_service:8001"
 	}
 	return &MLClient{BaseURL: baseURL}
 }
