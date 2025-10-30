@@ -70,7 +70,8 @@ const LiveStreamSeller = () => {
         console.log('Camera initialized, stream:', stream);
       }
       
-      // Stream is already stored in WebRTC service by initialize methods
+      // Ensure stream is set in WebRTC service
+      webrtcService.localStream = stream;
       console.log('🎥 SELLER: Stream ready for WebRTC sharing:', stream.getTracks().length, 'tracks');
       
       // Set streaming true first to render video element
@@ -88,8 +89,13 @@ const LiveStreamSeller = () => {
       
       // Setup WebRTC signaling listeners FIRST
       console.log('Setting up WebRTC signaling listeners');
-      webrtcService.setupSignalingListeners();
-      webrtcService.signalListenersSetup = true;
+      if (!webrtcService.signalListenersSetup) {
+        webrtcService.setupSignalingListeners();
+        webrtcService.signalListenersSetup = true;
+      }
+      
+      // Final check - ensure stream is set
+      console.log('🔍 SELLER: Final check - Has local stream:', !!webrtcService.localStream);
       
       // Connect to WebSocket with seller's room
       console.log('Connecting to WebSocket room:', sellerId);
@@ -103,12 +109,11 @@ const LiveStreamSeller = () => {
           data: { seller_id: sellerId, status: 'live' }
         });
         
+        // Double check local stream is still available
+        console.log('🔍 SELLER: WebSocket connected - Has local stream:', !!webrtcService.localStream);
+        
         // Start frame processing for ML prediction
         startFrameProcessing();
-        
-        // Set local stream to WebRTC service for sharing
-        webrtcService.localStream = stream;
-        console.log('🎥 SELLER: Local stream set for WebRTC sharing');
       });
       
       // Listen for auto pin updates

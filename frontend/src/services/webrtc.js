@@ -163,24 +163,32 @@ class WebRTCService {
       this.peers.delete(targetClientId);
     });
 
-    if (!this.signalListenersSetup) {
-      this.setupSignalingListeners();
-      this.signalListenersSetup = true;
-    }
-
+    // Signaling listeners are set up globally, not per peer
     return peer;
   }
 
   setupSignalingListeners() {
+    console.log('🔧 Setting up WebRTC signaling listeners');
     websocketService.on('webrtc_offer', async (message) => {
       console.log('🔥 SELLER: Received offer from viewer:', message.from);
       console.log('Current peers:', Array.from(this.peers.keys()));
       console.log('Has local stream:', !!this.localStream);
       console.log('Local stream tracks:', this.localStream?.getTracks().length || 0);
+      console.log('Local stream active:', this.localStream?.active);
       
       if (!this.localStream) {
         console.error('❌ SELLER: No local stream to send to viewer!');
-        return;
+        console.log('🔍 SELLER: Checking if stream exists in video element...');
+        
+        // Try to get stream from video element as fallback
+        const videoElement = document.querySelector('video');
+        if (videoElement && videoElement.srcObject) {
+          console.log('✅ SELLER: Found stream in video element, using as fallback');
+          this.localStream = videoElement.srcObject;
+        } else {
+          console.error('❌ SELLER: No stream found anywhere, cannot proceed');
+          return;
+        }
       }
       
       // Clean up existing peer if exists
