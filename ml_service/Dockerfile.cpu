@@ -21,6 +21,9 @@ RUN pip3 install --no-cache-dir -r requirements-cpu.txt
 
 COPY . .
 
+# Pre-download CLIP model to avoid runtime download
+RUN python3 -c "from transformers import CLIPModel, CLIPProcessor; CLIPModel.from_pretrained('openai/clip-vit-base-patch32'); CLIPProcessor.from_pretrained('openai/clip-vit-base-patch32')"
+
 EXPOSE 8001
 
 CMD ["python3", "app/main.py"]
