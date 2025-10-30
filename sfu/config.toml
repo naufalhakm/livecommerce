@@ -1,7 +1,7 @@
 [webrtc]
 iceportrange = [5000, 5100]
 # Use your server's public IP
-icecandidates = ["YOUR_SERVER_PUBLIC_IP"]
+icecandidates = ["159.65.7.56"]
 # Enable STUN for NAT traversal
 stun = ["stun:stun.l.google.com:19302"]
 
