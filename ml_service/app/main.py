@@ -20,8 +20,12 @@ clip_extractor = CLIPExtractor()
 faiss_index = FAISSIndex(config.EMBEDDINGS_DIR)
 trainer_service = TrainerService(yolo_detector, clip_extractor, faiss_index, config)
 
+logger.info(f"ML Service initialized. Available sellers: {faiss_index.get_loaded_sellers()}")
+
 # Training status tracking
 training_status = {}
+
+# Don't run training on startup - wait for API call
 
 @app.post("/train")
 async def train_model(seller_id: str, background_tasks: BackgroundTasks):
@@ -51,6 +55,14 @@ async def run_training_pipeline(seller_id: str):
 async def predict_products(seller_id: str = Form(...), file: UploadFile = File(...)):
     """Predict products in live stream frame - PRODUCTION ENDPOINT"""
     try:
+        # Check if model is trained for this seller
+        if seller_id not in faiss_index.seller_indices:
+            return {
+                'predictions': [],
+                'total_detections': 0,
+                'message': f'No trained model found for seller {seller_id}. Please train first.'
+            }
+        
         image_data = await file.read()
         result = await trainer_service.detect_products(seller_id, image_data)
         
@@ -59,7 +71,12 @@ async def predict_products(seller_id: str = Form(...), file: UploadFile = File(.
             'total_detections': len(result.get('predictions', []))
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Prediction error: {e}")
+        return {
+            'predictions': [],
+            'total_detections': 0,
+            'error': str(e)
+        }
 
 @app.post("/detect-live")
 async def detect_products_live(seller_id: str, file: UploadFile = File(...)):

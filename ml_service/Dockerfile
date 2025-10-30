@@ -30,5 +30,5 @@ RUN python3 -c "from transformers import CLIPModel, CLIPProcessor; CLIPModel.fro
 
 EXPOSE 8001
 
-# Run training first, then start service
-CMD ["sh", "-c", "python3 train_offline.py && python3 app/main.py"]
+# Start ML service directly
+CMD ["python3", "app/main.py"]
