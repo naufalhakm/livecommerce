@@ -16,6 +16,8 @@ const LiveStreamSeller = () => {
   const [isProcessingFrame, setIsProcessingFrame] = useState(false);
   const [reactions, setReactions] = useState([]);
   const [currentCamera, setCurrentCamera] = useState('user'); // 'user' = front, 'environment' = back
+  const [streamSource, setStreamSource] = useState(''); // 'camera' or 'screen'
+  const [showSourceModal, setShowSourceModal] = useState(false);
   const [stats, setStats] = useState({
     sales: 0,
     orders: 0,
@@ -51,9 +53,25 @@ const LiveStreamSeller = () => {
   };
 
   const startStream = async () => {
+    setShowSourceModal(true);
+  };
+
+  const startStreamWithSource = async (source) => {
+    setShowSourceModal(false);
+    setStreamSource(source);
+    
     try {
-      const stream = await webrtcService.initializeCamera(currentCamera);
-      console.log('Camera initialized, stream:', stream);
+      let stream;
+      if (source === 'screen') {
+        stream = await navigator.mediaDevices.getDisplayMedia({
+          video: { mediaSource: 'screen' },
+          audio: true
+        });
+        console.log('Screen sharing initialized, stream:', stream);
+      } else {
+        stream = await webrtcService.initializeCamera(currentCamera);
+        console.log('Camera initialized, stream:', stream);
+      }
       
       // Set streaming true first to render video element
       setIsStreaming(true);
@@ -255,7 +273,7 @@ const LiveStreamSeller = () => {
   };
 
   const switchCamera = async () => {
-    if (!isStreaming) return;
+    if (!isStreaming || streamSource === 'screen') return;
     
     try {
       // Stop current stream
@@ -529,13 +547,15 @@ const LiveStreamSeller = () => {
                     <p className="text-sm opacity-80">Featuring our latest products</p>
                   </div>
                   <div className="flex items-center gap-3">
-                    <button
-                      onClick={switchCamera}
-                      className="p-2.5 rounded-full bg-black/30 text-white hover:bg-black/50 transition-colors"
-                      title="Switch Camera"
-                    >
-                      <RotateCcw className="w-4 h-4" />
-                    </button>
+                    {streamSource === 'camera' && (
+                      <button
+                        onClick={switchCamera}
+                        className="p-2.5 rounded-full bg-black/30 text-white hover:bg-black/50 transition-colors"
+                        title="Switch Camera"
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                      </button>
+                    )}
                     <button
                       onClick={endStream}
                       className="px-6 py-2.5 rounded-full bg-red-500 text-white font-bold flex items-center gap-2 hover:bg-red-700 transition-colors"
@@ -545,6 +565,47 @@ const LiveStreamSeller = () => {
                   </div>
                 </div>
               </>
+            )}
+            
+            {/* Stream Source Selection Modal */}
+            {showSourceModal && (
+              <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-sm w-full mx-4">
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4 text-center">
+                    Choose Stream Source
+                  </h3>
+                  <div className="space-y-3">
+                    <button
+                      onClick={() => startStreamWithSource('camera')}
+                      className="w-full flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+                    >
+                      <Video className="w-6 h-6 text-blue-500" />
+                      <div className="text-left">
+                        <div className="font-medium text-gray-900 dark:text-white">Camera</div>
+                        <div className="text-sm text-gray-500 dark:text-gray-400">Use device camera</div>
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => startStreamWithSource('screen')}
+                      className="w-full flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+                    >
+                      <div className="w-6 h-6 bg-green-500 rounded flex items-center justify-center">
+                        <div className="w-4 h-3 bg-white rounded-sm"></div>
+                      </div>
+                      <div className="text-left">
+                        <div className="font-medium text-gray-900 dark:text-white">Screen Share</div>
+                        <div className="text-sm text-gray-500 dark:text-gray-400">Share your screen</div>
+                      </div>
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => setShowSourceModal(false)}
+                    className="w-full mt-4 py-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
             )}
           </div>
 
