@@ -102,3 +102,24 @@ func (c *MLClient) PredictProduct(sellerID string, imageData []byte) (*Predictio
 
 	return &result, nil
 }
+
+func (c *MLClient) GetTrainingStatus(sellerID string) (map[string]interface{}, error) {
+	url := fmt.Sprintf("%s/training-status/%s", c.BaseURL, sellerID)
+	
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("ML service returned status: %d", resp.StatusCode)
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}

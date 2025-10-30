@@ -351,6 +351,22 @@ func (h *ProductHandler) TrainProduct(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+func (h *ProductHandler) GetTrainingStatus(c *gin.Context) {
+	sellerID := c.Param("seller_id")
+	if sellerID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "seller_id is required"})
+		return
+	}
+
+	status, err := h.mlClient.GetTrainingStatus(sellerID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, status)
+}
+
 func (h *ProductHandler) createMLDataset(productID, sellerID int, productName string) error {
 	// Create ML dataset directory structure
 	mlDir := fmt.Sprintf("../ml_service/datasets/seller_%d/product_%d", sellerID, productID)
@@ -542,4 +558,19 @@ func (h *ProductHandler) GetPinnedProducts(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, pinnedProducts)
+}
+
+func (h *ProductHandler) TrainAllSellers(c *gin.Context) {
+	sellerID := c.Query("seller_id")
+	if sellerID == "" {
+		sellerID = "1" // default
+	}
+
+	result, err := h.mlClient.TrainModel(sellerID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
 }
