@@ -49,13 +49,21 @@ const LiveStreamViewer = () => {
       webrtcService.onRemoteStream = (stream) => {
         console.log('Received remote stream:', stream);
         console.log('Stream active:', stream.active);
-        console.log('Video tracks:', stream.getVideoTracks().length);
+        console.log('Video tracks:', stream.getVideoTracks());
+        console.log('Audio tracks:', stream.getAudioTracks());
+        
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          setIsPlaying(true);
+          videoRef.current.onloadedmetadata = () => {
+            console.log('Video metadata loaded');
+            setIsPlaying(true);
+          };
+          videoRef.current.onerror = (e) => {
+            console.error('Video element error:', e);
+          };
           console.log('Video stream set for viewer');
         } else {
-          console.error(' videoRef.current is null');
+          console.error('videoRef.current is null');
         }
       };
       
@@ -288,6 +296,10 @@ const LiveStreamViewer = () => {
               muted
               className="w-full h-full object-cover"
               style={{ display: isPlaying ? 'block' : 'none' }}
+              onLoadStart={() => console.log('Video load start')}
+              onCanPlay={() => console.log('Video can play')}
+              onPlay={() => console.log('Video playing')}
+              onError={(e) => console.error('Video error:', e)}
             />
             {!isPlaying && (
               <div className="absolute inset-0 w-full h-full bg-gray-800 flex items-center justify-center">
