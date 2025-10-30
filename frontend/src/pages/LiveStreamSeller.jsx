@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { productAPI, streamAPI, pinAPI } from '../services/api';
 import websocketService from '../services/websocket';
 import webrtcService from '../services/webrtc';
-import { LayoutDashboard, Package, Tv, FileText, TrendingUp, Settings, LogOut, Video, Eye, Plus, Pin, Send } from 'lucide-react';
+import { LayoutDashboard, Package, Tv, FileText, TrendingUp, Settings, LogOut, Video, Eye, Plus, Pin, Send, RotateCcw } from 'lucide-react';
 
 const LiveStreamSeller = () => {
   const [sellerId, setSellerId] = useState('');
@@ -14,6 +14,7 @@ const LiveStreamSeller = () => {
   const [detectedProducts, setDetectedProducts] = useState([]);
   const [isProcessingFrame, setIsProcessingFrame] = useState(false);
   const [reactions, setReactions] = useState([]);
+  const [currentCamera, setCurrentCamera] = useState('user'); // 'user' = front, 'environment' = back
   const [stats, setStats] = useState({
     sales: 0,
     orders: 0,
@@ -50,7 +51,7 @@ const LiveStreamSeller = () => {
 
   const startStream = async () => {
     try {
-      const stream = await webrtcService.initializeCamera();
+      const stream = await webrtcService.initializeCamera(currentCamera);
       console.log('Camera initialized, stream:', stream);
       
       // Set streaming true first to render video element
@@ -237,6 +238,32 @@ const LiveStreamSeller = () => {
     }
   };
 
+  const switchCamera = async () => {
+    if (!isStreaming) return;
+    
+    try {
+      // Stop current stream
+      if (videoRef.current && videoRef.current.srcObject) {
+        videoRef.current.srcObject.getTracks().forEach(track => track.stop());
+      }
+      
+      // Switch camera
+      const newCamera = currentCamera === 'user' ? 'environment' : 'user';
+      setCurrentCamera(newCamera);
+      
+      // Initialize new camera
+      const stream = await webrtcService.initializeCamera(newCamera);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+      
+      console.log(`Switched to ${newCamera === 'user' ? 'front' : 'back'} camera`);
+    } catch (error) {
+      console.error('Error switching camera:', error);
+      alert('Failed to switch camera');
+    }
+  };
+
   // Seller ID Input Screen
   if (!hasStarted) {
     return (
@@ -408,6 +435,13 @@ const LiveStreamSeller = () => {
                     <p className="text-sm opacity-80">Featuring our latest products</p>
                   </div>
                   <div className="flex items-center gap-3">
+                    <button
+                      onClick={switchCamera}
+                      className="p-2.5 rounded-full bg-black/30 text-white hover:bg-black/50 transition-colors"
+                      title="Switch Camera"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                    </button>
                     <button
                       onClick={endStream}
                       className="px-6 py-2.5 rounded-full bg-red-500 text-white font-bold flex items-center gap-2 hover:bg-red-700 transition-colors"

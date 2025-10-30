@@ -20,10 +20,14 @@ class WebRTCService {
     return this.SimplePeer;
   }
 
-  async initializeCamera() {
+  async initializeCamera(facingMode = 'user') {
     try {
       this.localStream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 1280, height: 720 },
+        video: { 
+          width: 1280, 
+          height: 720,
+          facingMode: facingMode // 'user' = front, 'environment' = back
+        },
         audio: true
       });
       return this.localStream;
