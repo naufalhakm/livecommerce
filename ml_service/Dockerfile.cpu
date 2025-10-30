@@ -13,13 +13,17 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Install PyTorch CPU version
-RUN pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+# Install PyTorch CPU version (v2.6+ required for security)
+RUN pip3 install torch>=2.6.0 torchvision>=0.21.0 --index-url https://download.pytorch.org/whl/cpu
 
 COPY requirements-cpu.txt .
 RUN pip3 install --no-cache-dir -r requirements-cpu.txt
 
 COPY . .
+
+# Pre-download CLIP model to avoid runtime download
+# Temporarily disabled due to PyTorch security requirements
+# RUN python3 -c "from transformers import CLIPModel, CLIPProcessor; CLIPModel.from_pretrained('openai/clip-vit-base-patch32'); CLIPProcessor.from_pretrained('openai/clip-vit-base-patch32')"
 
 EXPOSE 8001
 

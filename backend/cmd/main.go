@@ -61,6 +61,7 @@ func main() {
 		api.POST("/products/:id/pin", productHandler.PinProduct)
 		api.DELETE("/products/:id/unpin", productHandler.UnpinProduct)
 		api.GET("/products/pinned/:seller_id", productHandler.GetPinnedProducts)
+		api.DELETE("/products/unpin-all/:seller_id", productHandler.UnpinAllProducts)
 		api.GET("/training-status/:seller_id", productHandler.GetTrainingStatus)
 		api.POST("/train", productHandler.TrainAllSellers)
 		api.POST("/stream/predict", streamHandler.PredictFrame)

@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { productAPI, streamAPI, pinAPI } from '../services/api';
 import websocketService from '../services/websocket';
 import webrtcService from '../services/webrtc';
-import { LayoutDashboard, Package, Tv, FileText, TrendingUp, Settings, LogOut, Video, Eye, Plus, Pin, Send } from 'lucide-react';
+import { LayoutDashboard, Package, Tv, FileText, TrendingUp, Settings, LogOut, Video, Eye, Plus, Pin, Send, RotateCcw } from 'lucide-react';
 
 const LiveStreamSeller = () => {
   const [sellerId, setSellerId] = useState('');
@@ -12,6 +13,8 @@ const LiveStreamSeller = () => {
   const [pinnedProduct, setPinnedProduct] = useState(null);
   const [detectedProducts, setDetectedProducts] = useState([]);
   const [isProcessingFrame, setIsProcessingFrame] = useState(false);
+  const [reactions, setReactions] = useState([]);
+  const [currentCamera, setCurrentCamera] = useState('user'); // 'user' = front, 'environment' = back
   const [stats, setStats] = useState({
     sales: 0,
     orders: 0,
@@ -48,8 +51,8 @@ const LiveStreamSeller = () => {
 
   const startStream = async () => {
     try {
-      const stream = await webrtcService.initializeCamera();
-      console.log('✅ Camera initialized, stream:', stream);
+      const stream = await webrtcService.initializeCamera(currentCamera);
+      console.log('Camera initialized, stream:', stream);
       
       // Set streaming true first to render video element
       setIsStreaming(true);
@@ -58,24 +61,24 @@ const LiveStreamSeller = () => {
       setTimeout(() => {
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          console.log('✅ Video stream set to video element');
+          console.log('Video stream set to video element');
         } else {
-          console.error('❌ Video element still not found');
+          console.error('Video element still not found');
         }
       }, 50);
       
       // Setup WebRTC signaling listeners FIRST
-      console.log('🔧 Setting up WebRTC signaling listeners');
+      console.log('Setting up WebRTC signaling listeners');
       webrtcService.setupSignalingListeners();
       webrtcService.signalListenersSetup = true;
       
       // Connect to WebSocket with seller's room
-      console.log('🔌 Connecting to WebSocket room:', sellerId);
+      console.log('Connecting to WebSocket room:', sellerId);
       websocketService.connect(`seller-${sellerId}`, sellerId);
       
       // Wait for WebSocket to connect
       websocketService.on('connected', () => {
-        console.log('✅ Seller WebSocket connected, ready to receive offers');
+        console.log('Seller WebSocket connected, ready to receive offers');
         websocketService.send({
           type: 'seller_live',
           data: { seller_id: sellerId, status: 'live' }
@@ -87,16 +90,24 @@ const LiveStreamSeller = () => {
       
       // Listen for auto pin updates
       websocketService.on('product_pinned', (message) => {
-        console.log('🎯 Auto pinned product:', message.data);
+        console.log('Auto pinned product:', message.data);
         loadPinnedProducts();
       });
     } catch (error) {
-      console.error('❌ Error starting stream:', error);
+      console.error('Error starting stream:', error);
       alert('Failed to access camera. Please check permissions.');
     }
   };
 
-  const endStream = () => {
+  const endStream = async () => {
+    try {
+      // Unpin all products for this seller
+      await pinAPI.unpinAllProducts(sellerId);
+      console.log('All products unpinned for seller:', sellerId);
+    } catch (error) {
+      console.error('Error unpinning products:', error);
+    }
+    
     websocketService.send({
       type: 'seller_offline',
       data: { seller_id: sellerId, status: 'offline' }
@@ -144,7 +155,7 @@ const LiveStreamSeller = () => {
             const response = await streamAPI.predictFrame(sellerId, blob);
             if (response.data.predictions?.length > 0) {
               setDetectedProducts(response.data.predictions);
-              console.log('🔍 Detected products:', response.data.predictions);
+              console.log('Detected products:', response.data.predictions);
             }
           } catch (error) {
             console.error('Frame processing error:', error);
@@ -193,7 +204,7 @@ const LiveStreamSeller = () => {
       });
       
       websocketService.on('webrtc_offer', (message) => {
-        console.log('🎯 Seller received offer from:', message.from);
+        console.log('Seller received offer from:', message.from);
       });
 
       websocketService.on('user_left', (message) => {
@@ -204,6 +215,19 @@ const LiveStreamSeller = () => {
       websocketService.on('chat', (message) => {
         setMessages(prev => [...prev, message.data]);
       });
+
+      websocketService.on('reaction', (message) => {
+        const newReaction = {
+          id: Date.now() + Math.random(),
+          emoji: message.data.emoji,
+          x: Math.random() * 80 + 10,
+        };
+        setReactions(prev => [...prev, newReaction]);
+        
+        setTimeout(() => {
+          setReactions(prev => prev.filter(r => r.id !== newReaction.id));
+        }, 3000);
+      });
     }
   }, [isStreaming]);
 
@@ -211,6 +235,32 @@ const LiveStreamSeller = () => {
     if (newMessage.trim()) {
       websocketService.sendChat(newMessage, `Seller ${sellerId}`);
       setNewMessage('');
+    }
+  };
+
+  const switchCamera = async () => {
+    if (!isStreaming) return;
+    
+    try {
+      // Stop current stream
+      if (videoRef.current && videoRef.current.srcObject) {
+        videoRef.current.srcObject.getTracks().forEach(track => track.stop());
+      }
+      
+      // Switch camera
+      const newCamera = currentCamera === 'user' ? 'environment' : 'user';
+      setCurrentCamera(newCamera);
+      
+      // Initialize new camera
+      const stream = await webrtcService.initializeCamera(newCamera);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+      
+      console.log(`Switched to ${newCamera === 'user' ? 'front' : 'back'} camera`);
+    } catch (error) {
+      console.error('Error switching camera:', error);
+      alert('Failed to switch camera');
     }
   };
 
@@ -360,12 +410,38 @@ const LiveStreamSeller = () => {
                   )}
                 </div>
 
+                {/* Floating Reactions */}
+                <div className="absolute inset-0 pointer-events-none overflow-hidden">
+                  <AnimatePresence>
+                    {reactions.map((reaction) => (
+                      <motion.div
+                        key={reaction.id}
+                        className="absolute bottom-20 text-4xl"
+                        style={{ left: `${reaction.x}%` }}
+                        initial={{ opacity: 1, y: 0, scale: 0.8 }}
+                        animate={{ opacity: 0, y: -200, scale: 1.2 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 3, ease: "easeOut" }}
+                      >
+                        {reaction.emoji}
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+
                 <div className="absolute bottom-4 left-4 right-4 flex justify-between items-end">
                   <div className="text-white">
                     <h2 className="text-lg font-bold">Live Product Showcase</h2>
                     <p className="text-sm opacity-80">Featuring our latest products</p>
                   </div>
                   <div className="flex items-center gap-3">
+                    <button
+                      onClick={switchCamera}
+                      className="p-2.5 rounded-full bg-black/30 text-white hover:bg-black/50 transition-colors"
+                      title="Switch Camera"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                    </button>
                     <button
                       onClick={endStream}
                       className="px-6 py-2.5 rounded-full bg-red-500 text-white font-bold flex items-center gap-2 hover:bg-red-700 transition-colors"

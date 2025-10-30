@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import websocketService from '../services/websocket';
 import webrtcService from '../services/webrtc';
 import { Tv, Search, ShoppingCart, Bell, User, Volume2, VolumeX, Maximize, Minimize, Heart, ThumbsUp, Flame, PartyPopper, Send } from 'lucide-react';
@@ -17,6 +18,8 @@ const LiveStreamViewer = () => {
   const [username] = useState(`Viewer${Math.floor(Math.random() * 1000)}`);
   const [isMuted, setIsMuted] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [reactions, setReactions] = useState([]);
+  const [streamEnded, setStreamEnded] = useState(false);
   const videoRef = useRef(null);
   const videoContainerRef = useRef(null);
   const initialized = useRef(false);
@@ -40,28 +43,28 @@ const LiveStreamViewer = () => {
   useEffect(() => {
     if (hasJoined && sellerId && !initialized.current) {
       initialized.current = true;
-      console.log('🚀 Initializing viewer connection...');
+      console.log('Initializing viewer connection...');
       
       // Setup WebRTC callbacks BEFORE connecting
       webrtcService.onRemoteStream = (stream) => {
-        console.log('✅ Received remote stream:', stream);
+        console.log('Received remote stream:', stream);
         console.log('Stream active:', stream.active);
         console.log('Video tracks:', stream.getVideoTracks().length);
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           setIsPlaying(true);
-          console.log('✅ Video stream set for viewer');
+          console.log('Video stream set for viewer');
         } else {
-          console.error('❌ videoRef.current is null');
+          console.error(' videoRef.current is null');
         }
       };
       
       webrtcService.onConnect = () => {
-        console.log('✅ WebRTC peer connected');
+        console.log('WebRTC peer connected');
       };
       
       webrtcService.onError = (error) => {
-        console.error('❌ WebRTC error:', error);
+        console.error('WebRTC error:', error);
       };
 
       // Connect to seller's room
@@ -71,25 +74,20 @@ const LiveStreamViewer = () => {
       const handleConnected = async () => {
         try {
           await webrtcService.joinBroadcast(`seller-${sellerId}`);
-          console.log('✅ Joined broadcast as viewer');
+          console.log('Joined broadcast as viewer');
         } catch (error) {
-          console.error('❌ Error joining broadcast:', error);
+          console.error('Error joining broadcast:', error);
         }
       };
 
       websocketService.on('connected', handleConnected);
 
-      websocketService.on('product_detection', (message) => {
-        console.log('🔍 Product detection:', message.data);
-        // Don't auto-pin from detection, only from explicit pin events
-      });
-
       websocketService.on('product_pinned', async (message) => {
-        console.log('🎯 Auto pinned product:', message.data);
-        
+        console.log('Auto pinned product:', message.data);
+
         // Only update pin if similarity is high enough (80% or higher)
         if (message.data.similarity_score < 0.8) {
-          console.log('⚠️ Similarity too low, not updating pin:', message.data.similarity_score);
+          console.log('Similarity too low, not updating pin:', message.data.similarity_score);
           return;
         }
         
@@ -102,13 +100,13 @@ const LiveStreamViewer = () => {
               ...productData,
               similarity_score: message.data.similarity_score
             });
-            console.log('✅ Product pinned with high similarity:', message.data.similarity_score);
+            console.log('Product pinned with high similarity:', message.data.similarity_score);
           } else {
-            console.log('❌ Product not found in API, not updating pin');
+            console.log('Product not found in API, not updating pin');
           }
         } catch (error) {
           console.error('Error fetching product details:', error);
-          console.log('❌ API error, not updating pin');
+          console.log('API error, not updating pin');
         }
       });
 
@@ -122,6 +120,26 @@ const LiveStreamViewer = () => {
         setMessages(prev => [...prev, message.data]);
       });
 
+      websocketService.on('reaction', (message) => {
+        const newReaction = {
+          id: Date.now() + Math.random(),
+          emoji: message.data.emoji,
+          x: Math.random() * 80 + 10, // Random position 10-90%
+        };
+        setReactions(prev => [...prev, newReaction]);
+        
+        // Remove reaction after animation
+        setTimeout(() => {
+          setReactions(prev => prev.filter(r => r.id !== newReaction.id));
+        }, 3000);
+      });
+
+      websocketService.on('seller_offline', (message) => {
+        console.log('Seller went offline:', message.data);
+        setStreamEnded(true);
+        setIsPlaying(false);
+      });
+
       websocketService.on('user_joined', (message) => {
         setViewerCount(prev => prev + 1);
       });
@@ -133,7 +151,7 @@ const LiveStreamViewer = () => {
 
     return () => {
       if (initialized.current) {
-        console.log('🧹 Cleaning up viewer connection');
+        console.log('Cleaning up viewer connection');
         webrtcService.destroy();
         websocketService.disconnect();
       }
@@ -274,22 +292,59 @@ const LiveStreamViewer = () => {
             {!isPlaying && (
               <div className="absolute inset-0 w-full h-full bg-gray-800 flex items-center justify-center">
                 <div className="text-center">
-                  <div className="w-16 h-16 bg-black/40 rounded-full flex items-center justify-center text-white mx-auto mb-4 animate-pulse">
-                    <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  </div>
-                  <p className="text-gray-400 animate-pulse">Connecting to Seller {sellerId}...</p>
-                  <div className="flex justify-center mt-3">
-                    <div className="flex space-x-1">
-                      <div className="w-2 h-2 bg-red-500 rounded-full animate-bounce"></div>
-                      <div className="w-2 h-2 bg-red-500 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-                      <div className="w-2 h-2 bg-red-500 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
-                    </div>
-                  </div>
+                  {streamEnded ? (
+                    <>
+                      <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center text-white mx-auto mb-4">
+                        <Tv className="w-8 h-8 text-red-500" />
+                      </div>
+                      <p className="text-red-400 text-lg font-semibold mb-2">Stream Ended</p>
+                      <p className="text-gray-400">Seller {sellerId} has ended the livestream</p>
+                      <button
+                        onClick={() => navigate('/')}
+                        className="mt-4 px-6 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                      >
+                        Back to Home
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <div className="w-16 h-16 bg-black/40 rounded-full flex items-center justify-center text-white mx-auto mb-4 animate-pulse">
+                        <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      </div>
+                      <p className="text-gray-400 animate-pulse">Connecting to Seller {sellerId}...</p>
+                      <div className="flex justify-center mt-3">
+                        <div className="flex space-x-1">
+                          <div className="w-2 h-2 bg-red-500 rounded-full animate-bounce"></div>
+                          <div className="w-2 h-2 bg-red-500 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                          <div className="w-2 h-2 bg-red-500 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             )}
             
             <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent pointer-events-none"></div>
+
+            {/* Floating Reactions */}
+            <div className="absolute inset-0 pointer-events-none overflow-hidden">
+              <AnimatePresence>
+                {reactions.map((reaction) => (
+                  <motion.div
+                    key={reaction.id}
+                    className="absolute bottom-20 text-4xl"
+                    style={{ left: `${reaction.x}%` }}
+                    initial={{ opacity: 1, y: 0, scale: 0.8 }}
+                    animate={{ opacity: 0, y: -200, scale: 1.2 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 3, ease: "easeOut" }}
+                  >
+                    {reaction.emoji}
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
 
             <div className="absolute bottom-4 left-4 right-4">
               <div className="flex items-center justify-between">

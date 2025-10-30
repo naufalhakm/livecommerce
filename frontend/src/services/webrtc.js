@@ -20,10 +20,14 @@ class WebRTCService {
     return this.SimplePeer;
   }
 
-  async initializeCamera() {
+  async initializeCamera(facingMode = 'user') {
     try {
       this.localStream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 1280, height: 720 },
+        video: { 
+          width: 1280, 
+          height: 720,
+          facingMode: facingMode // 'user' = front, 'environment' = back
+        },
         audio: true
       });
       return this.localStream;
@@ -34,16 +38,19 @@ class WebRTCService {
   }
 
   async createPeer(isInitiator = false, targetClientId = null) {
-    console.log('🔧 Creating peer - initiator:', isInitiator, 'target:', targetClientId);
+    console.log('Creating peer - initiator:', isInitiator, 'target:', targetClientId);
     console.log('Has local stream:', !!this.localStream);
     
+    // Always clean up existing peer to avoid state conflicts
     if (this.peers.has(targetClientId)) {
-      console.log('⚠️ Peer already exists for:', targetClientId);
-      return this.peers.get(targetClientId);
+      console.log('Cleaning up existing peer for:', targetClientId);
+      const existingPeer = this.peers.get(targetClientId);
+      existingPeer.destroy();
+      this.peers.delete(targetClientId);
     }
 
     if (!this.localStream && !isInitiator) {
-      console.error('❌ No local stream available for seller to send!');
+      console.error('No local stream available for seller to send!');
       return null;
     }
 
@@ -66,17 +73,17 @@ class WebRTCService {
         offerToReceiveAudio: true,
         offerToReceiveVideo: true
       };
-      console.log('👁️ Viewer configured to receive audio/video');
+      console.log('Viewer configured to receive audio/video');
     }
 
     if (this.localStream && !isInitiator) {
       // Only seller (non-initiator) sends stream
       peerConfig.stream = this.localStream;
-      console.log('📤 Seller adding local stream to peer config:', this.localStream.getTracks().length, 'tracks');
+      console.log('Seller adding local stream to peer config:', this.localStream.getTracks().length, 'tracks');
     } else if (!isInitiator) {
-      console.error('❌ Seller has no local stream to send!');
+      console.error('Seller has no local stream to send!');
     } else {
-      console.log('👥 Viewer peer - no local stream needed');
+      console.log('Viewer peer - no local stream needed');
     }
 
     let peer;
@@ -92,7 +99,7 @@ class WebRTCService {
     }
 
     peer.on('signal', (data) => {
-      console.log('📤 Sending signal:', data.type, 'to:', targetClientId);
+      console.log('Sending signal:', data.type, 'to:', targetClientId);
       if (data.type === 'offer') {
         websocketService.sendOffer(data, targetClientId);
       } else if (data.type === 'answer') {
@@ -103,12 +110,12 @@ class WebRTCService {
     });
 
     peer.on('stream', (stream) => {
-      console.log('🎥 Stream received on peer:', targetClientId, stream);
+      console.log('Stream received on peer:', targetClientId, stream);
       this.remoteStream = stream;
       if (this.onRemoteStream) {
         this.onRemoteStream(stream);
       } else {
-        console.warn('⚠️ No onRemoteStream callback set');
+        console.warn('No onRemoteStream callback set');
       }
     });
 
@@ -141,7 +148,7 @@ class WebRTCService {
 
   setupSignalingListeners() {
     websocketService.on('webrtc_offer', async (message) => {
-      console.log('📥 Received offer from:', message.from);
+      console.log('Received offer from:', message.from);
       console.log('Current peers:', Array.from(this.peers.keys()));
       console.log('Has local stream:', !!this.localStream);
       
@@ -166,21 +173,27 @@ class WebRTCService {
     });
 
     websocketService.on('webrtc_answer', (message) => {
-      console.log('📥 Received answer from:', message.from);
+      console.log('Received answer from:', message.from);
       const peer = this.peers.get(message.from);
       if (peer && !peer.destroyed) {
         try {
-          peer.signal(message.data);
+          // Check peer connection state before signaling
+          if (peer._pc && peer._pc.signalingState === 'have-local-offer') {
+            peer.signal(message.data);
+          } else {
+            console.warn('Peer not in correct state for answer:', peer._pc?.signalingState);
+            // Clean up and ignore this answer
+            this.peers.delete(message.from);
+          }
         } catch (error) {
           console.error('Error signaling answer:', error);
-          // Recreate peer if in wrong state
           this.peers.delete(message.from);
         }
       }
     });
 
     websocketService.on('webrtc_ice_candidate', (message) => {
-      console.log('📥 Received ICE candidate from:', message.from);
+      console.log('Received ICE candidate from:', message.from);
       const peer = this.peers.get(message.from);
       if (peer) {
         peer.signal(message.data);
