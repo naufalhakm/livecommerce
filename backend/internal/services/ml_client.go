@@ -133,6 +133,6 @@ func (c *MLClient) GetTrainingStatus(sellerID string) (map[string]interface{}, e
 }
 
 func (c *MLClient) ProcessStreamFrame(sellerID string, imageData []byte) (*PredictionResponse, error) {
-	"""Process live stream frame for object detection and product recognition"""
+	// Process live stream frame for object detection and product recognition
 	return c.PredictProduct(sellerID, imageData)
 }
