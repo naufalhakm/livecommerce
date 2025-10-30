@@ -182,9 +182,13 @@ class WebRTCService {
         
         // Try to get stream from video element as fallback
         const videoElement = document.querySelector('video');
+        console.log('🔍 SELLER: Video element found:', !!videoElement);
+        console.log('🔍 SELLER: Video srcObject:', !!videoElement?.srcObject);
+        
         if (videoElement && videoElement.srcObject) {
           console.log('✅ SELLER: Found stream in video element, using as fallback');
           this.localStream = videoElement.srcObject;
+          console.log('✅ SELLER: Stream tracks from video:', this.localStream.getTracks().length);
         } else {
           console.error('❌ SELLER: No stream found anywhere, cannot proceed');
           return;

@@ -248,7 +248,13 @@ const LiveStreamSeller = () => {
       
       websocketService.on('webrtc_offer', (message) => {
         console.log('🔥 SELLER: Received WebRTC offer from viewer:', message.from);
-        // WebRTC service will handle this automatically via setupSignalingListeners
+        
+        // Ensure WebRTC service has the current stream
+        if (videoRef.current && videoRef.current.srcObject) {
+          console.log('🔧 SELLER: Setting stream to WebRTC service from video element');
+          webrtcService.localStream = videoRef.current.srcObject;
+          console.log('✅ SELLER: Stream set with', webrtcService.localStream.getTracks().length, 'tracks');
+        }
       });
 
       websocketService.on('user_left', (message) => {
