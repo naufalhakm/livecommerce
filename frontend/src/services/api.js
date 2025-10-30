@@ -77,6 +77,9 @@ export const pinAPI = {
   unpinProduct: (productId, sellerId) => {
     return api.delete(`/products/${productId}/unpin?seller_id=${sellerId}`);
   },
+  unpinAllProducts: (sellerId) => {
+    return api.delete(`/products/unpin-all/${sellerId}`);
+  },
   getPinnedProducts: (sellerId) => api.get(`/products/pinned/${sellerId}`)
 };
 

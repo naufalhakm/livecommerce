@@ -37,9 +37,12 @@ class WebRTCService {
     console.log('Creating peer - initiator:', isInitiator, 'target:', targetClientId);
     console.log('Has local stream:', !!this.localStream);
     
+    // Always clean up existing peer to avoid state conflicts
     if (this.peers.has(targetClientId)) {
-      console.log('Peer already exists for:', targetClientId);
-      return this.peers.get(targetClientId);
+      console.log('Cleaning up existing peer for:', targetClientId);
+      const existingPeer = this.peers.get(targetClientId);
+      existingPeer.destroy();
+      this.peers.delete(targetClientId);
     }
 
     if (!this.localStream && !isInitiator) {
@@ -170,10 +173,16 @@ class WebRTCService {
       const peer = this.peers.get(message.from);
       if (peer && !peer.destroyed) {
         try {
-          peer.signal(message.data);
+          // Check peer connection state before signaling
+          if (peer._pc && peer._pc.signalingState === 'have-local-offer') {
+            peer.signal(message.data);
+          } else {
+            console.warn('Peer not in correct state for answer:', peer._pc?.signalingState);
+            // Clean up and ignore this answer
+            this.peers.delete(message.from);
+          }
         } catch (error) {
           console.error('Error signaling answer:', error);
-          // Recreate peer if in wrong state
           this.peers.delete(message.from);
         }
       }

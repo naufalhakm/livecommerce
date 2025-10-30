@@ -98,7 +98,15 @@ const LiveStreamSeller = () => {
     }
   };
 
-  const endStream = () => {
+  const endStream = async () => {
+    try {
+      // Unpin all products for this seller
+      await pinAPI.unpinAllProducts(sellerId);
+      console.log('All products unpinned for seller:', sellerId);
+    } catch (error) {
+      console.error('Error unpinning products:', error);
+    }
+    
     websocketService.send({
       type: 'seller_offline',
       data: { seller_id: sellerId, status: 'offline' }

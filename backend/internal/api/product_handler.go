@@ -560,6 +560,23 @@ func (h *ProductHandler) GetPinnedProducts(c *gin.Context) {
 	c.JSON(http.StatusOK, pinnedProducts)
 }
 
+func (h *ProductHandler) UnpinAllProducts(c *gin.Context) {
+	sellerID := c.Param("seller_id")
+
+	unpinQuery := `UPDATE pinned_products SET is_pinned = false WHERE seller_id = $1 AND is_pinned = true`
+	result, err := db.DB.Exec(context.Background(), unpinQuery, sellerID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	rowsAffected := result.RowsAffected()
+	c.JSON(http.StatusOK, gin.H{
+		"message": "All products unpinned successfully", 
+		"rows_affected": rowsAffected,
+	})
+}
+
 func (h *ProductHandler) TrainAllSellers(c *gin.Context) {
 	sellerID := c.Query("seller_id")
 	if sellerID == "" {
