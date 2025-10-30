@@ -145,10 +145,18 @@ class WebRTCService {
       console.log('Current peers:', Array.from(this.peers.keys()));
       console.log('Has local stream:', !!this.localStream);
       
+      // Clean up existing peer if exists
+      if (this.peers.has(message.from)) {
+        const existingPeer = this.peers.get(message.from);
+        existingPeer.destroy();
+        this.peers.delete(message.from);
+        console.log('Cleaned up existing peer for:', message.from);
+      }
+      
       try {
         const peer = await this.createPeer(false, message.from);
         console.log('Created peer for:', message.from, peer);
-        if (peer) {
+        if (peer && !peer.destroyed) {
           peer.signal(message.data);
           console.log('Signaled offer to peer');
         }
@@ -160,8 +168,14 @@ class WebRTCService {
     websocketService.on('webrtc_answer', (message) => {
       console.log('📥 Received answer from:', message.from);
       const peer = this.peers.get(message.from);
-      if (peer) {
-        peer.signal(message.data);
+      if (peer && !peer.destroyed) {
+        try {
+          peer.signal(message.data);
+        } catch (error) {
+          console.error('Error signaling answer:', error);
+          // Recreate peer if in wrong state
+          this.peers.delete(message.from);
+        }
       }
     });
 
