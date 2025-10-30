@@ -30,9 +30,24 @@ class WebRTCService {
         },
         audio: true
       });
+      console.log('🎥 Camera stream initialized:', this.localStream.getTracks().length, 'tracks');
       return this.localStream;
     } catch (error) {
       console.error('Error accessing camera:', error);
+      throw error;
+    }
+  }
+  
+  async initializeScreenShare() {
+    try {
+      this.localStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { mediaSource: 'screen' },
+        audio: true
+      });
+      console.log('🖥️ Screen share initialized:', this.localStream.getTracks().length, 'tracks');
+      return this.localStream;
+    } catch (error) {
+      console.error('Error accessing screen share:', error);
       throw error;
     }
   }
@@ -99,12 +114,15 @@ class WebRTCService {
     }
 
     peer.on('signal', (data) => {
-      console.log('Sending signal:', data.type, 'to:', targetClientId);
+      console.log('📡 Sending signal:', data.type, 'to:', targetClientId);
       if (data.type === 'offer') {
+        console.log('📤 VIEWER: Sending offer to seller');
         websocketService.sendOffer(data, targetClientId);
       } else if (data.type === 'answer') {
+        console.log('📤 SELLER: Sending answer to viewer');
         websocketService.sendAnswer(data, targetClientId);
       } else if (data.candidate) {
+        console.log('📤 Sending ICE candidate');
         websocketService.sendIceCandidate(data, targetClientId);
       }
     });
@@ -158,6 +176,7 @@ class WebRTCService {
       console.log('🔥 SELLER: Received offer from viewer:', message.from);
       console.log('Current peers:', Array.from(this.peers.keys()));
       console.log('Has local stream:', !!this.localStream);
+      console.log('Local stream tracks:', this.localStream?.getTracks().length || 0);
       
       if (!this.localStream) {
         console.error('❌ SELLER: No local stream to send to viewer!');
@@ -177,8 +196,9 @@ class WebRTCService {
         const peer = await this.createPeer(false, message.from);
         console.log('✅ SELLER: Created peer for viewer:', message.from);
         if (peer && !peer.destroyed) {
+          console.log('✅ SELLER: Signaling offer to peer...');
           peer.signal(message.data);
-          console.log('✅ SELLER: Signaled offer to peer, will send answer');
+          console.log('✅ SELLER: Offer signaled, peer will generate answer');
         }
       } catch (error) {
         console.error('❌ SELLER: Error handling offer:', error);

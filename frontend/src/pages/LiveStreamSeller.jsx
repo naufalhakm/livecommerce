@@ -63,15 +63,15 @@ const LiveStreamSeller = () => {
     try {
       let stream;
       if (source === 'screen') {
-        stream = await navigator.mediaDevices.getDisplayMedia({
-          video: { mediaSource: 'screen' },
-          audio: true
-        });
+        stream = await webrtcService.initializeScreenShare();
         console.log('Screen sharing initialized, stream:', stream);
       } else {
         stream = await webrtcService.initializeCamera(currentCamera);
         console.log('Camera initialized, stream:', stream);
       }
+      
+      // Stream is already stored in WebRTC service by initialize methods
+      console.log('🎥 SELLER: Stream ready for WebRTC sharing:', stream.getTracks().length, 'tracks');
       
       // Set streaming true first to render video element
       setIsStreaming(true);
@@ -105,6 +105,10 @@ const LiveStreamSeller = () => {
         
         // Start frame processing for ML prediction
         startFrameProcessing();
+        
+        // Set local stream to WebRTC service for sharing
+        webrtcService.localStream = stream;
+        console.log('🎥 SELLER: Local stream set for WebRTC sharing');
       });
       
       // Listen for auto pin updates
@@ -238,7 +242,8 @@ const LiveStreamSeller = () => {
       });
       
       websocketService.on('webrtc_offer', (message) => {
-        console.log('Seller received offer from:', message.from);
+        console.log('🔥 SELLER: Received WebRTC offer from viewer:', message.from);
+        // WebRTC service will handle this automatically via setupSignalingListeners
       });
 
       websocketService.on('user_left', (message) => {
