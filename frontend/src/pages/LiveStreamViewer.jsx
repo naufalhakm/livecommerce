@@ -95,7 +95,7 @@ const LiveStreamViewer = () => {
         
         try {
           // Fetch full product details from API
-          const response = await fetch(`http://100.64.5.96:7080/api/products/${message.data.product_id}`);
+          const response = await fetch(`${import.meta.env.VITE_API_URL}/api/products/${message.data.product_id}`);
           if (response.ok) {
             const productData = await response.json();
             setPinnedProduct({

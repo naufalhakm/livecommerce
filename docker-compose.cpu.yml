@@ -1,5 +1,7 @@
+version: '3.8'
+
 services:
-  ml-service:
+  ml_service:
     build: 
       context: ./ml_service
       dockerfile: Dockerfile.cpu
@@ -11,29 +13,28 @@ services:
       - ./models:/app/models
     environment:
       - PYTHONUNBUFFERED=1
+      - BACKEND_URL=http://backend:8080
 
   backend:
     build: ./backend
     ports:
       - "8080:8080"
-    depends_on:
-      - ml-service
     environment:
       - DATABASE_URL=postgresql://postgres.aoefomhdatzkcsuowqmb:DFSiOWif2PCjd4X3@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require
       - SUPABASE_URL=https://aoefomhdatzkcsuowqmb.supabase.co
       - SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFvZWZvbWhkYXR6a2NzdW93cW1iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE1Mzg0MjQsImV4cCI6MjA3NzExNDQyNH0.79iinbsH4HWkb5YMrK_CAxnKMVlYZfQXzfLpapaLxZo
       - SUPABASE_STORAGE_BUCKET=products
-      - ML_SERVICE_URL=http://ml-service:8001
+      - ML_SERVICE_URL=http://ml_service:8001
 
   frontend:
     build: ./frontend
     ports:
       - "3000:3000"
+    environment:
+      - VITE_API_URL=http://159.65.7.56:8080
+      - VITE_WS_URL=ws://159.65.7.56:8080
     depends_on:
       - backend
-    environment:
-      - VITE_API_URL=http://localhost:8080
-      - VITE_WS_URL=ws://localhost:8080
 
 volumes:
   postgres_data:

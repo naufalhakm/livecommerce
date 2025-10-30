@@ -57,7 +57,7 @@ const AdminDashboard = () => {
       const sellerIds = [...new Set(products.map(p => p.seller_id))];
       
       // Use backend train endpoint
-      const response = await fetch('http://100.64.5.96:7080/api/train?seller_id=1', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/train?seller_id=1`, {
         method: 'POST'
       });
       
@@ -79,7 +79,7 @@ const AdminDashboard = () => {
     const interval = setInterval(async () => {
       try {
         const statusPromises = sellerIds.map(async (sellerId) => {
-          const response = await fetch(`http://100.64.5.96:7080/api/training-status/seller_${sellerId}`);
+          const response = await fetch(`${import.meta.env.VITE_API_URL}/api/training-status/seller_${sellerId}`);
           const status = await response.json();
           return { sellerId, status };
         });
