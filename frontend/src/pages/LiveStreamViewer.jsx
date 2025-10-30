@@ -47,32 +47,42 @@ const LiveStreamViewer = () => {
       
       // Setup WebRTC callbacks BEFORE connecting
       webrtcService.onRemoteStream = (stream) => {
-        console.log('Received remote stream:', stream);
-        console.log('Stream active:', stream.active);
-        console.log('Video tracks:', stream.getVideoTracks());
-        console.log('Audio tracks:', stream.getAudioTracks());
+        console.log('🎥 VIEWER: Received remote stream from seller!');
+        console.log('Stream details:', {
+          id: stream.id,
+          active: stream.active,
+          videoTracks: stream.getVideoTracks().length,
+          audioTracks: stream.getAudioTracks().length
+        });
         
         if (videoRef.current) {
+          console.log('✅ VIEWER: Setting stream to video element');
           videoRef.current.srcObject = stream;
+          
           videoRef.current.onloadedmetadata = () => {
-            console.log('Video metadata loaded');
+            console.log('✅ VIEWER: Video metadata loaded, starting playback');
             setIsPlaying(true);
           };
-          videoRef.current.onerror = (e) => {
-            console.error('Video element error:', e);
+          
+          videoRef.current.oncanplay = () => {
+            console.log('✅ VIEWER: Video can play');
+            videoRef.current.play().catch(e => console.error('Play error:', e));
           };
-          console.log('Video stream set for viewer');
+          
+          videoRef.current.onerror = (e) => {
+            console.error('❌ VIEWER: Video element error:', e);
+          };
         } else {
-          console.error('videoRef.current is null');
+          console.error('❌ VIEWER: videoRef.current is null');
         }
       };
       
       webrtcService.onConnect = () => {
-        console.log('WebRTC peer connected');
+        console.log('✅ VIEWER: WebRTC peer connected to seller!');
       };
       
       webrtcService.onError = (error) => {
-        console.error('WebRTC error:', error);
+        console.error('❌ VIEWER: WebRTC error:', error);
       };
 
       // Connect to seller's room
@@ -81,10 +91,12 @@ const LiveStreamViewer = () => {
       // Wait for WebSocket to connect before joining WebRTC
       const handleConnected = async () => {
         try {
+          console.log('🔗 VIEWER: WebSocket connected, joining broadcast...');
+          // Use seller's client ID format for WebRTC connection
           await webrtcService.joinBroadcast(`seller-${sellerId}`);
-          console.log('Joined broadcast as viewer');
+          console.log('✅ VIEWER: Joined broadcast, waiting for seller stream...');
         } catch (error) {
-          console.error('Error joining broadcast:', error);
+          console.error('❌ VIEWER: Error joining broadcast:', error);
         }
       };
 

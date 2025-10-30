@@ -110,12 +110,19 @@ class WebRTCService {
     });
 
     peer.on('stream', (stream) => {
-      console.log('Stream received on peer:', targetClientId, stream);
+      console.log('🎥 Stream received on peer:', targetClientId);
+      console.log('Stream details:', {
+        id: stream.id,
+        active: stream.active,
+        videoTracks: stream.getVideoTracks().length,
+        audioTracks: stream.getAudioTracks().length
+      });
       this.remoteStream = stream;
       if (this.onRemoteStream) {
+        console.log('✅ Calling onRemoteStream callback');
         this.onRemoteStream(stream);
       } else {
-        console.warn('No onRemoteStream callback set');
+        console.warn('❌ No onRemoteStream callback set');
       }
     });
 
@@ -148,9 +155,14 @@ class WebRTCService {
 
   setupSignalingListeners() {
     websocketService.on('webrtc_offer', async (message) => {
-      console.log('Received offer from:', message.from);
+      console.log('🔥 SELLER: Received offer from viewer:', message.from);
       console.log('Current peers:', Array.from(this.peers.keys()));
       console.log('Has local stream:', !!this.localStream);
+      
+      if (!this.localStream) {
+        console.error('❌ SELLER: No local stream to send to viewer!');
+        return;
+      }
       
       // Clean up existing peer if exists
       if (this.peers.has(message.from)) {
@@ -161,34 +173,32 @@ class WebRTCService {
       }
       
       try {
+        // Seller responds to viewer's offer (seller is not initiator)
         const peer = await this.createPeer(false, message.from);
-        console.log('Created peer for:', message.from, peer);
+        console.log('✅ SELLER: Created peer for viewer:', message.from);
         if (peer && !peer.destroyed) {
           peer.signal(message.data);
-          console.log('Signaled offer to peer');
+          console.log('✅ SELLER: Signaled offer to peer, will send answer');
         }
       } catch (error) {
-        console.error('Error handling offer:', error);
+        console.error('❌ SELLER: Error handling offer:', error);
       }
     });
 
     websocketService.on('webrtc_answer', (message) => {
-      console.log('Received answer from:', message.from);
+      console.log('🔥 VIEWER: Received answer from seller:', message.from);
       const peer = this.peers.get(message.from);
       if (peer && !peer.destroyed) {
         try {
-          // Check peer connection state before signaling
-          if (peer._pc && peer._pc.signalingState === 'have-local-offer') {
-            peer.signal(message.data);
-          } else {
-            console.warn('Peer not in correct state for answer:', peer._pc?.signalingState);
-            // Clean up and ignore this answer
-            this.peers.delete(message.from);
-          }
+          console.log('✅ VIEWER: Signaling answer to peer');
+          peer.signal(message.data);
+          console.log('✅ VIEWER: Answer signaled, connection should establish');
         } catch (error) {
-          console.error('Error signaling answer:', error);
+          console.error('❌ VIEWER: Error signaling answer:', error);
           this.peers.delete(message.from);
         }
+      } else {
+        console.error('❌ VIEWER: No peer found for answer from:', message.from);
       }
     });
 
@@ -206,7 +216,11 @@ class WebRTCService {
   }
 
   async joinBroadcast(sellerClientId) {
-    return await this.createPeer(true, sellerClientId); // Viewer is initiator
+    console.log('Joining broadcast for seller:', sellerClientId);
+    // Viewer initiates connection to seller
+    const peer = await this.createPeer(true, sellerClientId);
+    console.log('Viewer peer created:', peer);
+    return peer;
   }
 
   destroy() {

@@ -83,6 +83,7 @@ class WebSocketService {
 
   // WebRTC signaling methods
   sendOffer(offer, to) {
+    console.log('📤 VIEWER: Sending offer to seller:', to);
     this.send({
       type: 'webrtc_offer',
       data: offer,
@@ -91,6 +92,7 @@ class WebSocketService {
   }
 
   sendAnswer(answer, to) {
+    console.log('📤 SELLER: Sending answer to viewer:', to);
     this.send({
       type: 'webrtc_answer',
       data: answer,
@@ -99,6 +101,7 @@ class WebSocketService {
   }
 
   sendIceCandidate(candidate, to) {
+    console.log('📤 Sending ICE candidate to:', to);
     this.send({
       type: 'webrtc_ice_candidate',
       data: candidate,
