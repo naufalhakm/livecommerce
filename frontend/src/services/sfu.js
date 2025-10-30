@@ -9,13 +9,13 @@ class SFUService {
   }
 
   async connect(roomId, role = 'viewer') {
-    const sfuUrl = import.meta.env.VITE_SFU_URL || 'ws://localhost:7000';
+    const sfuUrl = import.meta.env.VITE_SFU_URL || 'ws://localhost:8188';
     
     try {
-      this.ws = new WebSocket(`${sfuUrl}/ws`);
+      this.ws = new WebSocket(sfuUrl);
       
       this.ws.onopen = () => {
-        console.log('🔗 SFU WebSocket connected');
+        console.log('🔗 Janus WebSocket connected');
         this.joinRoom(roomId, role);
       };
 
@@ -25,12 +25,12 @@ class SFUService {
       };
 
       this.ws.onerror = (error) => {
-        console.error('❌ SFU WebSocket error:', error);
+        console.error('❌ Janus WebSocket error:', error);
         if (this.onError) this.onError(error);
       };
 
     } catch (error) {
-      console.error('❌ SFU connection error:', error);
+      console.error('❌ Janus connection error:', error);
       if (this.onError) this.onError(error);
     }
   }
@@ -54,7 +54,7 @@ class SFUService {
     };
 
     this.pc.ontrack = (event) => {
-      console.log('🎥 SFU: Remote stream received');
+      console.log('🎥 Janus: Remote stream received');
       if (this.onRemoteStream) {
         this.onRemoteStream(event.streams[0]);
       }
@@ -123,7 +123,7 @@ class SFUService {
 
   async setLocalStream(stream) {
     this.localStream = stream;
-    console.log('🎥 SFU: Local stream set');
+    console.log('🎥 Janus: Local stream set');
   }
 
   disconnect() {
@@ -135,7 +135,7 @@ class SFUService {
       this.ws.close();
       this.ws = null;
     }
-    console.log('🔌 SFU: Disconnected');
+    console.log('🔌 Janus: Disconnected');
   }
 }
 
