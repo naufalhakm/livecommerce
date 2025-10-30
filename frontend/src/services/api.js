@@ -46,7 +46,38 @@ export const streamAPI = {
     return api.post(`/stream/process-frame?seller_id=${sellerId}`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     });
+  },
+  predictFrame: (sellerId, frameFile) => {
+    const formData = new FormData();
+    formData.append('frame', frameFile);
+    return api.post(`/stream/predict?seller_id=${sellerId}`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
   }
+};
+
+export const mlAPI = {
+  trainModel: (sellerId) => api.post(`/products/train?seller_id=${sellerId}`),
+  predictProduct: (sellerId, imageFile) => {
+    const formData = new FormData();
+    formData.append('frame', imageFile);
+    return api.post(`/stream/predict?seller_id=${sellerId}`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+  }
+};
+
+export const pinAPI = {
+  pinProduct: (productId, sellerId, similarityScore) => {
+    return api.post(`/products/${productId}/pin`, {
+      seller_id: sellerId,
+      similarity_score: similarityScore
+    });
+  },
+  unpinProduct: (productId, sellerId) => {
+    return api.delete(`/products/${productId}/unpin?seller_id=${sellerId}`);
+  },
+  getPinnedProducts: (sellerId) => api.get(`/products/pinned/${sellerId}`)
 };
 
 export default api;

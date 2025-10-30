@@ -437,3 +437,109 @@ func (h *ProductHandler) PredictProduct(c *gin.Context) {
 
 	c.JSON(http.StatusOK, result)
 }
+
+func (h *ProductHandler) PinProduct(c *gin.Context) {
+	productID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid product ID"})
+		return
+	}
+
+	var pinData struct {
+		SellerID        int     `json:"seller_id"`
+		SimilarityScore float64 `json:"similarity_score"`
+	}
+	if err := c.ShouldBindJSON(&pinData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Unpin previous product for this seller
+	unpinQuery := `UPDATE pinned_products SET is_pinned = false WHERE seller_id = $1 AND is_pinned = true`
+	_, err = db.DB.Exec(context.Background(), unpinQuery, pinData.SellerID)
+	if err != nil {
+		logger.Printf("Warning: Failed to unpin previous products: %v", err)
+	}
+
+	// Pin new product
+	pinQuery := `
+		INSERT INTO pinned_products (product_id, seller_id, similarity_score, is_pinned, pinned_at)
+		VALUES ($1, $2, $3, true, CURRENT_TIMESTAMP)
+		ON CONFLICT (product_id, seller_id) 
+		DO UPDATE SET similarity_score = $3, is_pinned = true, pinned_at = CURRENT_TIMESTAMP
+		RETURNING id
+	`
+	
+	var pinnedID int
+	err = db.DB.QueryRow(context.Background(), pinQuery, productID, pinData.SellerID, pinData.SimilarityScore).Scan(&pinnedID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Product pinned successfully", "pinned_id": pinnedID})
+}
+
+func (h *ProductHandler) UnpinProduct(c *gin.Context) {
+	productID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid product ID"})
+		return
+	}
+
+	sellerID := c.Query("seller_id")
+	if sellerID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "seller_id is required"})
+		return
+	}
+
+	unpinQuery := `UPDATE pinned_products SET is_pinned = false WHERE product_id = $1 AND seller_id = $2`
+	_, err = db.DB.Exec(context.Background(), unpinQuery, productID, sellerID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Product unpinned successfully"})
+}
+
+func (h *ProductHandler) GetPinnedProducts(c *gin.Context) {
+	sellerID := c.Param("seller_id")
+
+	query := `
+		SELECT pp.id, pp.product_id, pp.seller_id, pp.similarity_score, pp.is_pinned, pp.pinned_at,
+		       p.name, p.description, p.price
+		FROM pinned_products pp
+		JOIN products p ON pp.product_id = p.id
+		WHERE pp.seller_id = $1 AND pp.is_pinned = true
+		ORDER BY pp.pinned_at DESC
+	`
+	
+	rows, err := db.DB.Query(context.Background(), query, sellerID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	pinnedProducts := make([]models.PinnedProduct, 0)
+	for rows.Next() {
+		var pp models.PinnedProduct
+		var p models.Product
+		
+		err := rows.Scan(
+			&pp.ID, &pp.ProductID, &pp.SellerID, &pp.SimilarityScore, &pp.IsPinned, &pp.PinnedAt,
+			&p.Name, &p.Description, &p.Price,
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		
+		p.ID = pp.ProductID
+		pp.Product = &p
+		pinnedProducts = append(pinnedProducts, pp)
+	}
+
+	c.JSON(http.StatusOK, pinnedProducts)
+}

@@ -18,3 +18,13 @@ type Image struct {
 	ProductID int    `json:"product_id"`
 	ImageURL  string `json:"image_url"`
 }
+
+type PinnedProduct struct {
+	ID              int       `json:"id"`
+	ProductID       int       `json:"product_id"`
+	SellerID        int       `json:"seller_id"`
+	SimilarityScore float64   `json:"similarity_score"`
+	IsPinned        bool      `json:"is_pinned"`
+	PinnedAt        time.Time `json:"pinned_at"`
+	Product         *Product  `json:"product,omitempty"`
+}

@@ -13,6 +13,8 @@ from PIL import Image
 import io
 from transformers import CLIPProcessor, CLIPModel
 import numpy as np
+import faiss
+import pickle
 
 def check_pytorch():
     print(f"PyTorch version: {torch.__version__}")
@@ -53,13 +55,21 @@ def crop_objects_from_image(image_data, yolo_model):
         
         # Product-related classes (exclude person=0)
         product_classes = {
+            # Electronics & Gadgets
+            62: 'tv', 63: 'laptop', 64: 'mouse', 65: 'remote', 66: 'keyboard', 67: 'cell phone',
+            # Kitchen & Dining
             39: 'bottle', 40: 'wine glass', 41: 'cup', 42: 'fork', 43: 'knife', 44: 'spoon', 45: 'bowl',
+            68: 'microwave', 69: 'oven', 70: 'toaster', 71: 'sink', 72: 'refrigerator',
+            # Food Items
             46: 'banana', 47: 'apple', 48: 'sandwich', 49: 'orange', 50: 'broccoli', 51: 'carrot',
-            52: 'hot dog', 53: 'pizza', 54: 'donut', 55: 'cake', 56: 'chair', 57: 'couch', 58: 'potted plant',
-            59: 'bed', 60: 'dining table', 61: 'toilet', 62: 'tv', 63: 'laptop', 64: 'mouse', 65: 'remote',
-            66: 'keyboard', 67: 'cell phone', 68: 'microwave', 69: 'oven', 70: 'toaster', 71: 'sink',
-            72: 'refrigerator', 73: 'book', 74: 'clock', 75: 'vase', 76: 'scissors', 77: 'teddy bear',
-            78: 'hair drier', 79: 'toothbrush'
+            52: 'hot dog', 53: 'pizza', 54: 'donut', 55: 'cake',
+            # Furniture & Home
+            56: 'chair', 57: 'couch', 58: 'potted plant', 59: 'bed', 60: 'dining table',
+            # Personal Items
+            73: 'book', 74: 'clock', 75: 'vase', 76: 'scissors', 77: 'teddy bear',
+            78: 'hair drier', 79: 'toothbrush',
+            # Fashion & Accessories (if detected as general objects)
+            24: 'handbag', 25: 'tie', 26: 'suitcase'
         }
         
         cropped_objects = []
@@ -136,6 +146,74 @@ def generate_text_embedding(text, clip_model, clip_processor):
     except Exception as e:
         print(f"Error generating text embedding: {e}")
         return None
+
+def build_faiss_index(embeddings_dir):
+    """Build FAISS index from saved embeddings"""
+    try:
+        all_embeddings = []
+        product_metadata = []
+        
+        # Collect all image embeddings
+        for seller_dir in embeddings_dir.iterdir():
+            if seller_dir.is_dir():
+                seller_id = seller_dir.name
+                
+                for embedding_file in seller_dir.glob("*_image.npy"):
+                    # Load embedding
+                    embedding = np.load(embedding_file)
+                    all_embeddings.append(embedding.flatten())
+                    
+                    # Extract product info from filename
+                    filename = embedding_file.stem
+                    product_id = filename.split('_')[1]  # product_1_image_1_crop_1_image -> 1
+                    
+                    product_metadata.append({
+                        'seller_id': seller_id,
+                        'product_id': int(product_id),
+                        'embedding_file': str(embedding_file)
+                    })
+        
+        if not all_embeddings:
+            print("No embeddings found for FAISS index")
+            return None, None
+        
+        # Convert to numpy array
+        embeddings_array = np.array(all_embeddings).astype('float32')
+        print(f"Building FAISS index with {len(embeddings_array)} embeddings, dim={embeddings_array.shape[1]}")
+        
+        # Create FAISS index
+        dimension = embeddings_array.shape[1]
+        index = faiss.IndexFlatL2(dimension)
+        index.add(embeddings_array)
+        
+        return index, product_metadata
+    
+    except Exception as e:
+        print(f"Error building FAISS index: {e}")
+        return None, None
+
+def save_faiss_index(index, metadata, seller_id):
+    """Save FAISS index and metadata"""
+    try:
+        models_dir = Path("models")
+        models_dir.mkdir(exist_ok=True)
+        
+        # Save FAISS index
+        index_path = models_dir / f"{seller_id}_faiss.index"
+        faiss.write_index(index, str(index_path))
+        
+        # Save metadata
+        metadata_path = models_dir / f"{seller_id}_metadata.pkl"
+        with open(metadata_path, 'wb') as f:
+            pickle.dump(metadata, f)
+        
+        print(f"Saved FAISS index: {index_path}")
+        print(f"Saved metadata: {metadata_path}")
+        return True
+    
+    except Exception as e:
+        print(f"Error saving FAISS index: {e}")
+        return False
 
 def fetch_products_from_api():
     """Fetch all products from backend API"""
@@ -296,6 +374,21 @@ def organize_dataset():
             total_products += 1
     
     print(f"Dataset organized: {len(sellers)} sellers, {total_products} products, {total_images} images")
+    
+    # Build FAISS index for each seller
+    if clip_model and clip_processor:
+        print("\nBuilding FAISS indices...")
+        for seller_id in sellers.keys():
+            seller_embedding_dir = embeddings_dir / seller_id
+            
+            # Build FAISS index for this seller
+            index, metadata = build_faiss_index(seller_embedding_dir)
+            
+            if index is not None:
+                save_faiss_index(index, metadata, seller_id)
+            else:
+                print(f"Failed to build FAISS index for {seller_id}")
+    
     return True
 
 if __name__ == "__main__":

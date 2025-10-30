@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks
+from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, Form
 from fastapi.responses import JSONResponse
 import os
 from models.yolo_detector import YOLODetector
@@ -20,42 +20,87 @@ clip_extractor = CLIPExtractor()
 faiss_index = FAISSIndex(config.EMBEDDINGS_DIR)
 trainer_service = TrainerService(yolo_detector, clip_extractor, faiss_index, config)
 
+# Training status tracking
+training_status = {}
+
 @app.post("/train")
 async def train_model(seller_id: str, background_tasks: BackgroundTasks):
-    """Train model for specific seller using product_id structure"""
+    """Train model for all products from backend API"""
     try:
         training_status[seller_id] = {"status": "training", "progress": 0, "message": "Starting training..."}
-        background_tasks.add_task(train_with_progress, seller_id)
+        background_tasks.add_task(run_training_pipeline, seller_id)
         return {"status": "training_started", "seller_id": seller_id}
     except Exception as e:
         training_status[seller_id] = {"status": "error", "message": str(e)}
         raise HTTPException(status_code=500, detail=str(e))
 
-async def train_with_progress(seller_id: str):
-    """Train model with progress updates"""
+async def run_training_pipeline(seller_id: str):
+    """Run complete training pipeline"""
     try:
-        training_status[seller_id] = {"status": "training", "progress": 10, "message": "Loading datasets..."}
-        result = await trainer_service.train_seller_model(seller_id)
-        training_status[seller_id] = {"status": "completed", "progress": 100, "message": f"Training completed! {result['total_embeddings']} embeddings processed."}
+        training_status[seller_id] = {"status": "training", "progress": 20, "message": "Fetching products from API..."}
+        
+        # Train all sellers from API
+        results = await trainer_service.train_all_sellers()
+        
+        training_status[seller_id] = {"status": "completed", "progress": 100, 
+                                    "message": f"Training completed for all sellers: {list(results.keys())}"}
     except Exception as e:
         training_status[seller_id] = {"status": "error", "progress": 0, "message": str(e)}
 
-@app.post("/detect")
-async def detect_products(seller_id: str, file: UploadFile = File(...)):
-    """Detect products in uploaded image"""
+@app.post("/predict")
+async def predict_products(seller_id: str = Form(...), file: UploadFile = File(...)):
+    """Predict products in live stream frame - PRODUCTION ENDPOINT"""
     try:
         image_data = await file.read()
         result = await trainer_service.detect_products(seller_id, image_data)
-        return JSONResponse(content=result)
+        
+        return {
+            'predictions': result.get('predictions', []),
+            'total_detections': len(result.get('predictions', []))
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/reload-model")
-async def reload_model(seller_id: str):
-    """Reload trained model for seller"""
+@app.post("/detect-live")
+async def detect_products_live(seller_id: str, file: UploadFile = File(...)):
+    """Detect products in live stream frame with auto-pin to cart"""
     try:
-        faiss_index.load_seller_index(seller_id)
-        return {"status": "success", "message": f"Model reloaded for seller: {seller_id}"}
+        image_data = await file.read()
+        result = await trainer_service.detect_products(seller_id, image_data)
+        
+        # Auto-pin high confidence products to cart
+        backend_url = os.getenv('BACKEND_URL', 'http://backend:8080')
+        pinned_products = []
+        
+        for prediction in result.get('predictions', []):
+            if prediction['similarity_score'] > 0.8:  # High confidence threshold
+                try:
+                    import requests
+                    # Send to backend API to pin product
+                    pin_response = requests.post(
+                        f"{backend_url}/api/products/{prediction['product_id']}/pin",
+                        json={'seller_id': seller_id, 'similarity_score': prediction['similarity_score']}
+                    )
+                    if pin_response.status_code == 200:
+                        pinned_products.append(prediction['product_id'])
+                except Exception as e:
+                    logger.error(f"Failed to pin product {prediction['product_id']}: {e}")
+        
+        return {
+            'predictions': result.get('predictions', []),
+            'pinned_products': pinned_products,
+            'message': f"Detected {len(result.get('predictions', []))} objects, pinned {len(pinned_products)} products"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/reload-models")
+async def reload_models():
+    """Reload all trained models"""
+    try:
+        faiss_index._load_existing_indices()
+        return {"status": "success", "message": "All models reloaded", 
+                "available_sellers": faiss_index.get_loaded_sellers()}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -64,13 +109,11 @@ async def get_model_info():
     """Get model information"""
     return {
         "loaded_sellers": faiss_index.get_loaded_sellers(),
+        "total_vectors": {seller: idx.ntotal for seller, idx in faiss_index.seller_indices.items()},
         "yolo_model": "yolov8n",
         "clip_model": "openai/clip-vit-base-patch32",
         "status": "active"
     }
-
-# Training status tracking
-training_status = {}
 
 @app.get("/training-status/{seller_id}")
 async def get_training_status(seller_id: str):

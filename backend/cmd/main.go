@@ -58,6 +58,10 @@ func main() {
 		api.POST("/products/:id/images", productHandler.AddProductImages)
 		api.POST("/products/:id/train", productHandler.TrainProduct)
 		api.POST("/products/:id/predict", productHandler.PredictProduct)
+		api.POST("/products/:id/pin", productHandler.PinProduct)
+		api.DELETE("/products/:id/unpin", productHandler.UnpinProduct)
+		api.GET("/products/pinned/:seller_id", productHandler.GetPinnedProducts)
+		api.POST("/stream/predict", streamHandler.PredictFrame)
 
 		// Stream routes
 		// api.GET("/streams", streamHandler.GetLiveStreams)

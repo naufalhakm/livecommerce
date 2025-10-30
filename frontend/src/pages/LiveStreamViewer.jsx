@@ -80,9 +80,27 @@ const LiveStreamViewer = () => {
       websocketService.on('connected', handleConnected);
 
       websocketService.on('product_detection', (message) => {
+        console.log('🔍 Product detection:', message.data);
         if (message.data.predictions?.length > 0) {
-          setPinnedProduct(message.data.predictions[0]);
+          // Show detected product temporarily
+          const topPrediction = message.data.predictions[0];
+          if (topPrediction.similarity_score > 0.8) {
+            setPinnedProduct({
+              name: topPrediction.product_name,
+              price: topPrediction.price || 'N/A',
+              similarity_score: topPrediction.similarity_score
+            });
+          }
         }
+      });
+
+      websocketService.on('product_pinned', (message) => {
+        console.log('🎯 Auto pinned product:', message.data);
+        setPinnedProduct({
+          name: message.data.product_name,
+          price: message.data.price || 'N/A',
+          similarity_score: message.data.similarity_score
+        });
       });
 
       websocketService.on('pin_product', (message) => {
@@ -305,6 +323,11 @@ const LiveStreamViewer = () => {
                 <div className="flex-1">
                   <p className="text-white text-lg font-bold">{pinnedProduct.name || pinnedProduct.product_name}</p>
                   <p className="text-red-500 text-xl font-bold">${pinnedProduct.price}</p>
+                  {pinnedProduct.similarity_score && (
+                    <p className="text-green-400 text-sm">
+                      ✨ {Math.round(pinnedProduct.similarity_score * 100)}% Match
+                    </p>
+                  )}
                 </div>
                 <button className="bg-red-500 text-white px-6 py-3 rounded-lg font-bold hover:bg-red-600 flex items-center gap-2 transition-colors">
                   <ShoppingCart className="w-5 h-5" /> Add to Cart

@@ -1,8 +1,10 @@
 package api
 
 import (
+	"context"
 	"net/http"
 
+	"live-shopping-ai/backend/internal/db"
 	"live-shopping-ai/backend/internal/services"
 
 	"github.com/gin-gonic/gin"
@@ -165,8 +167,16 @@ func (h *StreamHandler) ProcessStreamFrame(c *gin.Context) {
 		return
 	}
 
-	// Broadcast detection results to seller's room
+	// Auto pin/unpin products based on predictions
 	if len(result.Predictions) > 0 {
+		for _, prediction := range result.Predictions {
+			if prediction.SimilarityScore > 0.8 { // High confidence threshold
+				// Auto pin product
+				h.autoPinProduct(prediction.ProductName, sellerID, prediction.SimilarityScore)
+			}
+		}
+		
+		// Broadcast detection results to seller's room
 		h.hub.BroadcastToRoom(sellerID, services.Message{
 			Type: "product_detection",
 			Data: map[string]interface{}{
@@ -177,4 +187,71 @@ func (h *StreamHandler) ProcessStreamFrame(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, result)
+}
+
+func (h *StreamHandler) PredictFrame(c *gin.Context) {
+	sellerID := c.Query("seller_id")
+	if sellerID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "seller_id is required"})
+		return
+	}
+
+	file, err := c.FormFile("frame")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No frame file provided"})
+		return
+	}
+
+	src, err := file.Open()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to open frame file"})
+		return
+	}
+	defer src.Close()
+
+	frameData := make([]byte, file.Size)
+	src.Read(frameData)
+
+	// Call ML service for prediction
+	result, err := h.mlClient.PredictProduct(sellerID, frameData)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+func (h *StreamHandler) autoPinProduct(productName, sellerID string, similarityScore float64) {
+	// Find product by name and seller
+	query := `SELECT id FROM products WHERE name ILIKE $1 AND seller_id = $2 LIMIT 1`
+	var productID int
+	err := db.DB.QueryRow(context.Background(), query, "%"+productName+"%", sellerID).Scan(&productID)
+	if err != nil {
+		logger.Printf("Product not found for auto-pin: %s", productName)
+		return
+	}
+
+	// Unpin previous products
+	unpinQuery := `UPDATE pinned_products SET is_pinned = false WHERE seller_id = $1 AND is_pinned = true`
+	db.DB.Exec(context.Background(), unpinQuery, sellerID)
+
+	// Pin new product
+	pinQuery := `
+		INSERT INTO pinned_products (product_id, seller_id, similarity_score, is_pinned, pinned_at)
+		VALUES ($1, $2, $3, true, CURRENT_TIMESTAMP)
+		ON CONFLICT (product_id, seller_id) 
+		DO UPDATE SET similarity_score = $3, is_pinned = true, pinned_at = CURRENT_TIMESTAMP
+	`
+	db.DB.Exec(context.Background(), pinQuery, productID, sellerID, similarityScore)
+
+	// Broadcast pin update
+	h.hub.BroadcastToRoom(sellerID, services.Message{
+		Type: "product_pinned",
+		Data: map[string]interface{}{
+			"product_id":       productID,
+			"product_name":     productName,
+			"similarity_score": similarityScore,
+		},
+	})
 }

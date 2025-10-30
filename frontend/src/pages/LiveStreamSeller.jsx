@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { productAPI } from '../services/api';
+import { productAPI, streamAPI, pinAPI } from '../services/api';
 import websocketService from '../services/websocket';
 import webrtcService from '../services/webrtc';
 import { LayoutDashboard, Package, Tv, FileText, TrendingUp, Settings, LogOut, Video, Eye, Plus, Pin, Send } from 'lucide-react';
@@ -10,6 +10,8 @@ const LiveStreamSeller = () => {
   const [isStreaming, setIsStreaming] = useState(false);
   const [products, setProducts] = useState([]);
   const [pinnedProduct, setPinnedProduct] = useState(null);
+  const [detectedProducts, setDetectedProducts] = useState([]);
+  const [isProcessingFrame, setIsProcessingFrame] = useState(false);
   const [stats, setStats] = useState({
     sales: 0,
     orders: 0,
@@ -20,6 +22,7 @@ const LiveStreamSeller = () => {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const videoRef = useRef(null);
+  const frameProcessingRef = useRef(null);
 
   useEffect(() => {
     loadProducts();
@@ -77,6 +80,15 @@ const LiveStreamSeller = () => {
           type: 'seller_live',
           data: { seller_id: sellerId, status: 'live' }
         });
+        
+        // Start frame processing for ML prediction
+        startFrameProcessing();
+      });
+      
+      // Listen for auto pin updates
+      websocketService.on('product_pinned', (message) => {
+        console.log('🎯 Auto pinned product:', message.data);
+        loadPinnedProducts();
       });
     } catch (error) {
       console.error('❌ Error starting stream:', error);
@@ -90,6 +102,11 @@ const LiveStreamSeller = () => {
       data: { seller_id: sellerId, status: 'offline' }
     });
     
+    // Stop frame processing
+    if (frameProcessingRef.current) {
+      clearInterval(frameProcessingRef.current);
+    }
+    
     webrtcService.destroy();
     websocketService.disconnect();
     if (videoRef.current) {
@@ -98,22 +115,73 @@ const LiveStreamSeller = () => {
     setIsStreaming(false);
   };
 
-  const pinProduct = (product) => {
-    // Toggle pin/unpin
-    if (pinnedProduct?.id === product.id) {
-      // Unpin the product
-      setPinnedProduct(null);
-      websocketService.send({
-        type: 'unpin_product',
-        data: { seller_id: sellerId }
-      });
-    } else {
-      // Pin the product
-      setPinnedProduct(product);
-      websocketService.send({
-        type: 'pin_product',
-        data: { product, seller_id: sellerId }
-      });
+  const startFrameProcessing = () => {
+    // Process frame every 3 seconds for ML prediction
+    frameProcessingRef.current = setInterval(async () => {
+      if (videoRef.current && !isProcessingFrame) {
+        await captureAndProcessFrame();
+      }
+    }, 3000);
+  };
+  
+  const captureAndProcessFrame = async () => {
+    if (!videoRef.current || isProcessingFrame) return;
+    
+    try {
+      setIsProcessingFrame(true);
+      
+      // Capture frame from video
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = videoRef.current.videoWidth;
+      canvas.height = videoRef.current.videoHeight;
+      ctx.drawImage(videoRef.current, 0, 0);
+      
+      // Convert to blob
+      canvas.toBlob(async (blob) => {
+        if (blob) {
+          try {
+            const response = await streamAPI.predictFrame(sellerId, blob);
+            if (response.data.predictions?.length > 0) {
+              setDetectedProducts(response.data.predictions);
+              console.log('🔍 Detected products:', response.data.predictions);
+            }
+          } catch (error) {
+            console.error('Frame processing error:', error);
+          }
+        }
+        setIsProcessingFrame(false);
+      }, 'image/jpeg', 0.8);
+    } catch (error) {
+      console.error('Frame capture error:', error);
+      setIsProcessingFrame(false);
+    }
+  };
+  
+  const loadPinnedProducts = async () => {
+    try {
+      const response = await pinAPI.getPinnedProducts(sellerId);
+      if (response.data.length > 0) {
+        setPinnedProduct(response.data[0].product);
+      }
+    } catch (error) {
+      console.error('Error loading pinned products:', error);
+    }
+  };
+
+  const pinProduct = async (product) => {
+    try {
+      if (pinnedProduct?.id === product.id) {
+        // Unpin the product
+        await pinAPI.unpinProduct(product.id, sellerId);
+        setPinnedProduct(null);
+      } else {
+        // Pin the product
+        await pinAPI.pinProduct(product.id, sellerId, 1.0);
+        setPinnedProduct(product);
+      }
+    } catch (error) {
+      console.error('Pin/unpin error:', error);
     }
   };
 
@@ -275,9 +343,21 @@ const LiveStreamSeller = () => {
                   <span className="text-white font-semibold text-sm">LIVE</span>
                 </div>
 
-                <div className="absolute top-4 right-4 flex items-center gap-2 bg-black/30 text-white px-3 py-1.5 rounded-lg backdrop-blur-sm">
-                  <Eye className="w-4 h-4" />
-                  <span className="text-sm font-medium">{stats.viewers}</span>
+                <div className="absolute top-4 right-4 flex flex-col gap-2">
+                  <div className="flex items-center gap-2 bg-black/30 text-white px-3 py-1.5 rounded-lg backdrop-blur-sm">
+                    <Eye className="w-4 h-4" />
+                    <span className="text-sm font-medium">{stats.viewers}</span>
+                  </div>
+                  {isProcessingFrame && (
+                    <div className="bg-blue-500/80 text-white px-3 py-1.5 rounded-lg backdrop-blur-sm">
+                      <span className="text-xs font-medium">AI Processing...</span>
+                    </div>
+                  )}
+                  {detectedProducts.length > 0 && (
+                    <div className="bg-green-500/80 text-white px-3 py-1.5 rounded-lg backdrop-blur-sm">
+                      <span className="text-xs font-medium">{detectedProducts.length} Products Detected</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="absolute bottom-4 left-4 right-4 flex justify-between items-end">
