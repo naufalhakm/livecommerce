@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { productAPI, streamAPI, pinAPI } from '../services/api';
 import websocketService from '../services/websocket';
 import webrtcService from '../services/webrtc';
+import sfuService from '../services/sfu';
 import { LayoutDashboard, Package, Tv, FileText, TrendingUp, Settings, LogOut, Video, Eye, Plus, Pin, Send, RotateCcw } from 'lucide-react';
 
 const LiveStreamSeller = () => {
@@ -109,15 +110,17 @@ const LiveStreamSeller = () => {
       websocketService.connect(`seller-${sellerId}`, sellerId);
       
       // Wait for WebSocket to connect
-      websocketService.on('connected', () => {
+      websocketService.on('connected', async () => {
         console.log('Seller WebSocket connected, ready to receive offers');
         websocketService.send({
           type: 'seller_live',
           data: { seller_id: sellerId, status: 'live' }
         });
         
-        // Double check local stream is still available
-        console.log('🔍 SELLER: WebSocket connected - Has local stream:', !!webrtcService.localStream);
+        // Set stream to SFU for broadcasting
+        await sfuService.setLocalStream(stream);
+        await sfuService.connect(sellerId, 'publisher');
+        console.log('🎥 SELLER: Stream published to SFU');
         
         // Start frame processing for ML prediction
         startFrameProcessing();

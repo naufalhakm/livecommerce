@@ -1,0 +1,16 @@
+[sfu]
+ballast = "1mb"
+
+[router]
+maxbandwidth = "1000mb"
+maxpackettrack = 500
+
+[webrtc]
+candidates = ["0.0.0.0:5000-5100"]
+portrange = [5000, 5100]
+
+[turn]
+enabled = false
+
+[log]
+level = "info"

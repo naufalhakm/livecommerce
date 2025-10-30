@@ -53,15 +53,18 @@ class WebRTCService {
   }
 
   async createPeer(isInitiator = false, targetClientId = null) {
-    console.log('Creating peer - initiator:', isInitiator, 'target:', targetClientId);
+    console.log('🔧 Creating peer - initiator:', isInitiator, 'target:', targetClientId);
     console.log('Has local stream:', !!this.localStream);
     
+    // Generate unique peer ID to avoid conflicts
+    const peerId = targetClientId || `peer-${Date.now()}`;
+    
     // Always clean up existing peer to avoid state conflicts
-    if (this.peers.has(targetClientId)) {
-      console.log('Cleaning up existing peer for:', targetClientId);
-      const existingPeer = this.peers.get(targetClientId);
+    if (this.peers.has(peerId)) {
+      console.log('🧹 Cleaning up existing peer for:', peerId);
+      const existingPeer = this.peers.get(peerId);
       existingPeer.destroy();
-      this.peers.delete(targetClientId);
+      this.peers.delete(peerId);
     }
 
     if (!this.localStream && !isInitiator) {
@@ -109,8 +112,8 @@ class WebRTCService {
       throw error;
     }
 
-    if (targetClientId) {
-      this.peers.set(targetClientId, peer);
+    if (peerId) {
+      this.peers.set(peerId, peer);
     }
 
     peer.on('signal', (data) => {
@@ -128,7 +131,7 @@ class WebRTCService {
     });
 
     peer.on('stream', (stream) => {
-      console.log('🎥 Stream received on peer:', targetClientId);
+      console.log('🎥 Stream received on peer:', peerId);
       console.log('Stream details:', {
         id: stream.id,
         active: stream.active,
@@ -145,7 +148,7 @@ class WebRTCService {
     });
 
     peer.on('connect', () => {
-      console.log('✅ WebRTC connection established with:', targetClientId);
+      console.log('✅ WebRTC connection established with:', peerId);
       console.log('📊 Total active connections:', this.peers.size);
       if (this.onConnect) {
         this.onConnect();
@@ -153,15 +156,17 @@ class WebRTCService {
     });
 
     peer.on('error', (error) => {
-      console.error('WebRTC error with', targetClientId, ':', error);
+      console.error('WebRTC error with', peerId, ':', error);
+      // Clean up failed peer
+      this.peers.delete(peerId);
       if (this.onError) {
         this.onError(error);
       }
     });
 
     peer.on('close', () => {
-      console.log('🔴 Peer closed:', targetClientId);
-      this.peers.delete(targetClientId);
+      console.log('🔴 Peer closed:', peerId);
+      this.peers.delete(peerId);
       console.log('📊 Remaining connections:', this.peers.size);
     });
 
@@ -197,12 +202,12 @@ class WebRTCService {
         }
       }
       
-      // Clean up existing peer if exists
+      // Always clean up existing peer to avoid state conflicts
       if (this.peers.has(message.from)) {
         const existingPeer = this.peers.get(message.from);
+        console.log('🧹 SELLER: Cleaning up existing peer for:', message.from);
         existingPeer.destroy();
         this.peers.delete(message.from);
-        console.log('Cleaned up existing peer for:', message.from);
       }
       
       console.log('📊 SELLER: Current active peers:', this.peers.size);
@@ -226,9 +231,16 @@ class WebRTCService {
       const peer = this.peers.get(message.from);
       if (peer && !peer.destroyed) {
         try {
-          console.log('✅ VIEWER: Signaling answer to peer');
-          peer.signal(message.data);
-          console.log('✅ VIEWER: Answer signaled, connection should establish');
+          // Check peer state before signaling answer
+          if (peer._pc && peer._pc.signalingState === 'have-local-offer') {
+            console.log('✅ VIEWER: Peer in correct state, signaling answer');
+            peer.signal(message.data);
+            console.log('✅ VIEWER: Answer signaled, connection should establish');
+          } else {
+            console.warn('⚠️ VIEWER: Peer not in correct state:', peer._pc?.signalingState);
+            // Recreate peer if in wrong state
+            this.peers.delete(message.from);
+          }
         } catch (error) {
           console.error('❌ VIEWER: Error signaling answer:', error);
           this.peers.delete(message.from);

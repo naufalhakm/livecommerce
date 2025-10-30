@@ -33,8 +33,20 @@ services:
     environment:
       - VITE_API_URL=https://livecomerce.laidtechnology.tech
       - VITE_WS_URL=wss://livecomerce.laidtechnology.tech
+      - VITE_SFU_URL=wss://livecomerce.laidtechnology.tech/sfu
     depends_on:
       - backend
+      - ion-sfu
+
+  ion-sfu:
+    image: pionwebrtc/ion-sfu:latest
+    ports:
+      - "7000:7000"
+      - "5000-5100:5000-5100/udp"
+    volumes:
+      - ./sfu/config.toml:/configs/sfu.toml
+    environment:
+      - SFU_CONFIG_FILE=/configs/sfu.toml
 
 volumes:
   postgres_data:

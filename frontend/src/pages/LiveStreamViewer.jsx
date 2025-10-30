@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import websocketService from '../services/websocket';
 import webrtcService from '../services/webrtc';
+import sfuService from '../services/sfu';
 import { Tv, Search, ShoppingCart, Bell, User, Volume2, VolumeX, Maximize, Minimize, Heart, ThumbsUp, Flame, PartyPopper, Send } from 'lucide-react';
 
 const LiveStreamViewer = () => {
@@ -45,9 +46,9 @@ const LiveStreamViewer = () => {
       initialized.current = true;
       console.log('Initializing viewer connection...');
       
-      // Setup WebRTC callbacks BEFORE connecting
-      webrtcService.onRemoteStream = (stream) => {
-        console.log('🎥 VIEWER: Received remote stream from seller!');
+      // Setup SFU callbacks
+      sfuService.onRemoteStream = (stream) => {
+        console.log('🎥 VIEWER: Received stream from SFU!');
         console.log('Stream details:', {
           id: stream.id,
           active: stream.active,
@@ -56,7 +57,7 @@ const LiveStreamViewer = () => {
         });
         
         if (videoRef.current) {
-          console.log('✅ VIEWER: Setting stream to video element');
+          console.log('✅ VIEWER: Setting SFU stream to video element');
           videoRef.current.srcObject = stream;
           
           videoRef.current.onloadedmetadata = () => {
@@ -93,13 +94,9 @@ const LiveStreamViewer = () => {
         try {
           console.log('🔗 VIEWER: WebSocket connected, joining broadcast...');
           
-          // Add small delay to ensure seller is ready
-          await new Promise(resolve => setTimeout(resolve, 500));
-          
-          // Use seller's client ID format for WebRTC connection
-          await webrtcService.joinBroadcast(`seller-${sellerId}`);
-          console.log('🎯 VIEWER: Looking for seller with client_id: seller-' + sellerId + ' in room: ' + sellerId);
-          console.log('✅ VIEWER: Joined broadcast, waiting for seller stream...');
+          // Connect to SFU to receive seller's stream
+          await sfuService.connect(sellerId, 'viewer');
+          console.log('✅ VIEWER: Connected to SFU, waiting for seller stream...');
         } catch (error) {
           console.error('❌ VIEWER: Error joining broadcast:', error);
         }
@@ -177,6 +174,7 @@ const LiveStreamViewer = () => {
     return () => {
       if (initialized.current) {
         console.log('Cleaning up viewer connection');
+        sfuService.disconnect();
         webrtcService.destroy();
         websocketService.disconnect();
       }
