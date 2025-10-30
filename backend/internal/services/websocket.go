@@ -158,10 +158,13 @@ func (c *Client) readPump() {
 		// Handle different message types
 		switch msg.Type {
 		case "webrtc_offer", "webrtc_answer", "webrtc_ice_candidate":
+			log.Printf("WebRTC signaling: %s from %s to %s in room %s", msg.Type, msg.From, msg.To, c.roomID)
 			// Relay WebRTC signaling to specific client or broadcast to room
 			if msg.To != "" {
+				log.Printf("Sending %s to specific client %s", msg.Type, msg.To)
 				c.hub.SendToClient(c.roomID, msg.To, msg)
 			} else {
+				log.Printf("Broadcasting %s to room %s", msg.Type, c.roomID)
 				c.hub.BroadcastToRoom(c.roomID, msg)
 			}
 		case "chat":

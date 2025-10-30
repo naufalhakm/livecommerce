@@ -85,7 +85,7 @@ const LiveStreamViewer = () => {
         console.error('❌ VIEWER: WebRTC error:', error);
       };
 
-      // Connect to seller's room
+      // Connect to seller's room - use same room ID as seller
       websocketService.connect(`viewer-${Date.now()}`, sellerId);
       
       // Wait for WebSocket to connect before joining WebRTC
@@ -94,6 +94,7 @@ const LiveStreamViewer = () => {
           console.log('🔗 VIEWER: WebSocket connected, joining broadcast...');
           // Use seller's client ID format for WebRTC connection
           await webrtcService.joinBroadcast(`seller-${sellerId}`);
+          console.log('🎯 VIEWER: Looking for seller with client_id: seller-' + sellerId + ' in room: ' + sellerId);
           console.log('✅ VIEWER: Joined broadcast, waiting for seller stream...');
         } catch (error) {
           console.error('❌ VIEWER: Error joining broadcast:', error);
