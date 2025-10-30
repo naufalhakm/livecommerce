@@ -8,7 +8,14 @@ from services.trainer import TrainerService
 from utils.config import Config
 import logging
 
-logging.basicConfig(level=logging.INFO)
+import sys
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Live Commerce ML Service")
@@ -55,6 +62,7 @@ async def run_training_pipeline(seller_id: str):
 async def predict_products(seller_id: str = Form(...), file: UploadFile = File(...)):
     """Predict products in live stream frame - PRODUCTION ENDPOINT"""
     try:
+        print(f"🔍 PREDICT REQUEST: seller_id={seller_id}, file={file.filename}")
         logger.info(f"🔍 PREDICT REQUEST: seller_id={seller_id}, file={file.filename}")
         
         # Convert seller_id to seller_X format for FAISS lookup
