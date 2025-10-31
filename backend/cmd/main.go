@@ -25,6 +25,10 @@ func main() {
 	hub := services.NewHub()
 	go hub.Run()
 
+	// Initialize WebRTC signaling hub
+	webrtcHub := services.NewWebRTCSignalingHub()
+	go webrtcHub.Run()
+
 	// Initialize handlers
 	productHandler := api.NewProductHandler()
 	streamHandler := api.NewStreamHandler(hub)
@@ -78,6 +82,11 @@ func main() {
 
 	// WebSocket route
 	r.GET("/ws/livestream", streamHandler.HandleWebSocket)
+
+	// WebRTC signaling route
+	r.GET("/ws/webrtc", func(c *gin.Context) {
+		webrtcHub.HandleWebRTCSignaling(c.Writer, c.Request)
+	})
 
 	// Health check
 	r.GET("/health", func(c *gin.Context) {

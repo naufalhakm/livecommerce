@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import websocketService from '../services/websocket';
 import webrtcService from '../services/webrtc';
 import sfuService from '../services/sfu';
+import webrtcDirectService from '../services/webrtc_direct';
 import { Tv, Search, ShoppingCart, Bell, User, Volume2, VolumeX, Maximize, Minimize, Heart, ThumbsUp, Flame, PartyPopper, Send } from 'lucide-react';
 
 const LiveStreamViewer = () => {
@@ -46,37 +47,75 @@ const LiveStreamViewer = () => {
       initialized.current = true;
       console.log('Initializing viewer connection...');
       
-      // Setup SFU callbacks
-      sfuService.onRemoteStream = (stream) => {
-        console.log('🎥 VIEWER: Received stream from SFU!');
-        console.log('Stream details:', {
-          id: stream.id,
-          active: stream.active,
-          videoTracks: stream.getVideoTracks().length,
-          audioTracks: stream.getAudioTracks().length
-        });
+      // Use same streaming method as seller
+      const useDirectWebRTC = false; // Use SFU for 1-to-many
+      
+      if (useDirectWebRTC) {
+        // Direct WebRTC callbacks
+        webrtcDirectService.onRemoteStream = (stream) => {
+          console.log('🎥 VIEWER: Received stream via direct WebRTC!');
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            videoRef.current.onloadedmetadata = () => {
+              setIsPlaying(true);
+            };
+            videoRef.current.oncanplay = () => {
+              if (videoRef.current) {
+                videoRef.current.play().catch(e => console.error('Play error:', e));
+              }
+            };
+          }
+        };
         
-        if (videoRef.current) {
-          console.log('✅ VIEWER: Setting SFU stream to video element');
-          videoRef.current.srcObject = stream;
+        webrtcDirectService.onError = (error) => {
+          console.error('❌ VIEWER: Direct WebRTC error:', error);
+          setStreamEnded(true);
+        };
+      } else {
+        // SFU callbacks
+        sfuService.onRemoteStream = (stream) => {
+          if (!stream) {
+            console.warn('⚠️ VIEWER: Received undefined stream, ignoring');
+            return;
+          }
           
-          videoRef.current.onloadedmetadata = () => {
-            console.log('✅ VIEWER: Video metadata loaded, starting playback');
-            setIsPlaying(true);
-          };
+          console.log('🎥 VIEWER: Received stream from SFU!');
+          console.log('Stream details:', {
+            id: stream.id,
+            active: stream.active,
+            videoTracks: stream.getVideoTracks().length,
+            audioTracks: stream.getAudioTracks().length
+          });
           
-          videoRef.current.oncanplay = () => {
-            console.log('✅ VIEWER: Video can play');
-            videoRef.current.play().catch(e => console.error('Play error:', e));
-          };
-          
-          videoRef.current.onerror = (e) => {
-            console.error('❌ VIEWER: Video element error:', e);
-          };
-        } else {
-          console.error('❌ VIEWER: videoRef.current is null');
-        }
-      };
+          if (videoRef.current && stream.active) {
+            videoRef.current.srcObject = stream;
+            videoRef.current.muted = true;
+            
+            videoRef.current.onloadedmetadata = () => {
+              console.log('✅ VIEWER: Video metadata loaded');
+              setIsPlaying(true);
+            };
+            
+            videoRef.current.oncanplay = () => {
+              console.log('✅ VIEWER: Video can play, starting playback');
+              if (videoRef.current) {
+                videoRef.current.play().then(() => {
+                  console.log('✅ VIEWER: Video playing successfully');
+                }).catch(e => {
+                  console.error('❌ VIEWER: Play error:', e);
+                });
+              }
+            };
+            
+            setTimeout(() => {
+              if (videoRef.current && videoRef.current.readyState >= 2) {
+                console.log('🔄 VIEWER: Force playing video');
+                videoRef.current.play().catch(e => console.error('Force play error:', e));
+              }
+            }, 500);
+          }
+        };
+      }
       
       webrtcService.onConnect = () => {
         console.log('✅ VIEWER: WebRTC peer connected to seller!');
@@ -94,9 +133,15 @@ const LiveStreamViewer = () => {
         try {
           console.log('🔗 VIEWER: WebSocket connected, joining broadcast...');
           
-          // Connect to SFU to receive seller's stream
-          await sfuService.connect(sellerId, 'viewer');
-          console.log('✅ VIEWER: Connected to SFU, waiting for seller stream...');
+          if (useDirectWebRTC) {
+            // Connect via direct WebRTC
+            await webrtcDirectService.connect(sellerId, 'viewer', `viewer-${Date.now()}`);
+            console.log('✅ VIEWER: Connected via direct WebRTC');
+          } else {
+            // Connect to SFU to receive seller's stream
+            await sfuService.connect(sellerId, 'viewer');
+            console.log('✅ VIEWER: Connected to SFU, waiting for seller stream...');
+          }
         } catch (error) {
           console.error('❌ VIEWER: Error joining broadcast:', error);
         }
@@ -175,6 +220,7 @@ const LiveStreamViewer = () => {
       if (initialized.current) {
         console.log('Cleaning up viewer connection');
         sfuService.disconnect();
+        webrtcDirectService.disconnect();
         webrtcService.destroy();
         websocketService.disconnect();
       }

@@ -4,6 +4,7 @@ import { productAPI, streamAPI, pinAPI } from '../services/api';
 import websocketService from '../services/websocket';
 import webrtcService from '../services/webrtc';
 import sfuService from '../services/sfu';
+import webrtcDirectService from '../services/webrtc_direct';
 import { LayoutDashboard, Package, Tv, FileText, TrendingUp, Settings, LogOut, Video, Eye, Plus, Pin, Send, RotateCcw } from 'lucide-react';
 
 const LiveStreamSeller = () => {
@@ -117,10 +118,20 @@ const LiveStreamSeller = () => {
           data: { seller_id: sellerId, status: 'live' }
         });
         
-        // Set stream to SFU for broadcasting
-        await sfuService.setLocalStream(stream);
-        await sfuService.connect(sellerId, 'publisher');
-        console.log('🎥 SELLER: Stream published to SFU');
+        // Use SFU for scalable streaming (>10 viewers) or direct WebRTC for smaller groups
+        const useDirectWebRTC = false; // Use SFU for 1-to-many
+        
+        if (useDirectWebRTC) {
+          // Direct WebRTC for better latency with fewer viewers
+          await webrtcDirectService.setLocalStream(stream);
+          await webrtcDirectService.connect(sellerId, 'publisher', `seller-${sellerId}`);
+          console.log('🎥 SELLER: Stream ready for direct WebRTC');
+        } else {
+          // SFU for scalable streaming
+          await sfuService.setLocalStream(stream);
+          await sfuService.connect(sellerId, 'publisher');
+          console.log('🎥 SELLER: Stream published to SFU');
+        }
         
         // Start frame processing for ML prediction
         startFrameProcessing();
@@ -161,8 +172,12 @@ const LiveStreamSeller = () => {
       videoRef.current.srcObject.getTracks().forEach(track => track.stop());
     }
     
+    // Cleanup streaming services
     webrtcService.destroy();
+    webrtcDirectService.disconnect();
+    sfuService.disconnect();
     websocketService.disconnect();
+    
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }

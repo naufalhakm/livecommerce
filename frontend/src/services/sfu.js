@@ -6,17 +6,21 @@ class SFUService {
     this.onRemoteStream = null;
     this.onConnect = null;
     this.onError = null;
+    this.roomId = null;
+    this.role = null;
   }
 
   async connect(roomId, role = 'viewer') {
     const sfuUrl = import.meta.env.VITE_SFU_URL || 'ws://localhost:8188';
+    this.roomId = roomId;
+    this.role = role;
     
     try {
-      this.ws = new WebSocket(sfuUrl);
+      this.ws = new WebSocket(`${sfuUrl}/ws`);
       
       this.ws.onopen = () => {
-        console.log('🔗 Janus WebSocket connected');
-        this.joinRoom(roomId, role);
+        console.log('🔗 SFU WebSocket connected');
+        this.joinRoom();
       };
 
       this.ws.onmessage = (event) => {
@@ -25,17 +29,32 @@ class SFUService {
       };
 
       this.ws.onerror = (error) => {
-        console.error('❌ Janus WebSocket error:', error);
+        console.error('❌ SFU WebSocket error:', error);
         if (this.onError) this.onError(error);
       };
 
     } catch (error) {
-      console.error('❌ Janus connection error:', error);
+      console.error('❌ SFU connection error:', error);
       if (this.onError) this.onError(error);
     }
   }
 
-  async joinRoom(roomId, role) {
+  async joinRoom() {
+    this.clientId = `${this.role}_${Date.now()}`;
+    
+    // Join room first
+    this.sendMessage({
+      type: 'join',
+      data: {
+        client_id: this.clientId,
+        role: this.role
+      },
+      room: this.roomId,
+      role: this.role
+    });
+  }
+
+  async setupPeerConnection() {
     this.pc = new RTCPeerConnection({
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' }
@@ -45,73 +64,86 @@ class SFUService {
     this.pc.onicecandidate = (event) => {
       if (event.candidate) {
         this.sendMessage({
-          method: 'trickle',
-          params: {
-            candidate: event.candidate
-          }
+          type: 'ice',
+          data: {
+            candidate: event.candidate.candidate,
+            sdpMLineIndex: event.candidate.sdpMLineIndex,
+            sdpMid: event.candidate.sdpMid
+          },
+          room: this.roomId,
+          role: this.role,
+          client_id: this.clientId
         });
       }
     };
 
     this.pc.ontrack = (event) => {
-      console.log('🎥 Janus: Remote stream received');
-      if (this.onRemoteStream) {
+      console.log('🎥 SFU: Remote stream received');
+      if (this.onRemoteStream && event.streams && event.streams[0]) {
         this.onRemoteStream(event.streams[0]);
       }
     };
 
-    if (role === 'publisher') {
-      // Seller publishes stream
-      if (this.localStream) {
-        this.localStream.getTracks().forEach(track => {
-          this.pc.addTrack(track, this.localStream);
-        });
+    this.pc.onconnectionstatechange = () => {
+      console.log('SFU connection state:', this.pc.connectionState);
+      if (this.pc.connectionState === 'connected' && this.onConnect) {
+        this.onConnect();
       }
+    };
 
-      const offer = await this.pc.createOffer();
-      await this.pc.setLocalDescription(offer);
-
-      this.sendMessage({
-        method: 'join',
-        params: {
-          sid: roomId,
-          offer: offer,
-          config: { codec: 'vp8' }
-        }
-      });
-    } else {
-      // Viewer subscribes to stream
-      this.sendMessage({
-        method: 'join',
-        params: {
-          sid: roomId
-        }
+    if (this.role === 'publisher' && this.localStream) {
+      this.localStream.getTracks().forEach(track => {
+        this.pc.addTrack(track, this.localStream);
       });
     }
+
+    const offer = await this.pc.createOffer({
+      offerToReceiveAudio: true,
+      offerToReceiveVideo: true
+    });
+    await this.pc.setLocalDescription(offer);
+
+    this.sendMessage({
+      type: 'offer',
+      data: { sdp: offer.sdp },
+      room: this.roomId,
+      role: this.role,
+      client_id: this.clientId
+    });
   }
 
   async handleMessage(message) {
-    switch (message.method) {
-      case 'offer':
-        await this.pc.setRemoteDescription(message.params);
-        const answer = await this.pc.createAnswer();
-        await this.pc.setLocalDescription(answer);
-        
-        this.sendMessage({
-          method: 'answer',
-          params: answer
-        });
-        break;
+    try {
+      switch (message.type) {
+        case 'joined':
+          console.log('✅ SFU: Joined room, setting up peer connection');
+          await this.setupPeerConnection();
+          break;
 
-      case 'answer':
-        await this.pc.setRemoteDescription(message.params);
-        break;
+        case 'answer':
+          if (this.pc && this.pc.signalingState === 'have-local-offer') {
+            const answer = new RTCSessionDescription({
+              type: 'answer',
+              sdp: message.data.sdp
+            });
+            await this.pc.setRemoteDescription(answer);
+            console.log('✅ SFU: Answer set, connection establishing');
+          } else {
+            console.warn('⚠️ SFU: Received answer in wrong state:', this.pc?.signalingState);
+          }
+          break;
 
-      case 'trickle':
-        if (message.params.candidate) {
-          await this.pc.addIceCandidate(message.params.candidate);
-        }
-        break;
+        case 'ice':
+          if (message.data.candidate && this.pc.remoteDescription) {
+            await this.pc.addIceCandidate(new RTCIceCandidate(message.data));
+          }
+          break;
+
+        default:
+          console.log('SFU: Unknown message type:', message.type);
+      }
+    } catch (error) {
+      console.error('❌ SFU: Error handling message:', error);
     }
   }
 
@@ -123,7 +155,7 @@ class SFUService {
 
   async setLocalStream(stream) {
     this.localStream = stream;
-    console.log('🎥 Janus: Local stream set');
+    console.log('🎥 SFU: Local stream set');
   }
 
   disconnect() {
@@ -135,7 +167,8 @@ class SFUService {
       this.ws.close();
       this.ws = null;
     }
-    console.log('🔌 Janus: Disconnected');
+    this.localStream = null;
+    console.log('🔌 SFU: Disconnected');
   }
 }
 
