@@ -24,11 +24,16 @@ class WebRTCService {
     try {
       this.localStream = await navigator.mediaDevices.getUserMedia({
         video: { 
-          width: 1280, 
-          height: 720,
-          facingMode: facingMode // 'user' = front, 'environment' = back
+          width: { ideal: 1280, max: 1280 }, 
+          height: { ideal: 720, max: 720 },
+          frameRate: { ideal: 30, max: 30 },
+          facingMode: facingMode
         },
-        audio: true
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 44100
+        }
       });
       console.log('🎥 Camera stream initialized:', this.localStream.getTracks().length, 'tracks');
       return this.localStream;

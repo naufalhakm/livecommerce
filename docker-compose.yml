@@ -31,9 +31,9 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - VITE_API_URL=http://localhost:8080
-      - VITE_WS_URL=ws://localhost:8080
-      - VITE_SFU_URL=ws://localhost:8188
+      - VITE_API_URL=https://livecomerce.laidtechnology.tech
+      - VITE_WS_URL=wss://livecomerce.laidtechnology.tech
+      - VITE_SFU_URL=wss://livecomerce.laidtechnology.tech/sfu
     depends_on:
       - backend
       - sfu
@@ -46,12 +46,13 @@ services:
       - "8188:8188"
     environment:
       - PORT=8188
+      - SERVER_IP=159.65.7.56
     restart: unless-stopped
     deploy:
       resources:
         limits:
-          memory: 256M
-          cpus: '0.3'
+          memory: 512M
+          cpus: '0.5'
 
 volumes:
   postgres_data:

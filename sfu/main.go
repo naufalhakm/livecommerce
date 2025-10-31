@@ -3,7 +3,9 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v3"
@@ -46,11 +48,17 @@ var sfu = &SFU{
 
 func main() {
 	http.HandleFunc("/ws", handleWebSocket)
+	http.HandleFunc("/", handleWebSocket) // Handle root path for nginx proxy
 	log.Println("SFU Server starting on :8188")
 	log.Fatal(http.ListenAndServe(":8188", nil))
 }
 
 func handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	// Add CORS headers for production
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "*")
+	
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("WebSocket upgrade error: %v", err)
@@ -81,7 +89,16 @@ func handleJoin(conn *websocket.Conn, msg Message) {
 	clientID := data["client_id"].(string)
 	role := data["role"].(string)
 
-	log.Printf("Client %s (%s) joining room %s", clientID, role, roomID)
+	log.Printf("Client %s (%s) joining room %s at %v", clientID, role, roomID, time.Now())
+	
+	// Log room stats
+	sfu.mutex.RLock()
+	if existingRoom, exists := sfu.rooms[roomID]; exists {
+		existingRoom.mutex.RLock()
+		log.Printf("Room %s has %d existing clients", roomID, len(existingRoom.clients))
+		existingRoom.mutex.RUnlock()
+	}
+	sfu.mutex.RUnlock()
 
 	sfu.mutex.Lock()
 	room, exists := sfu.rooms[roomID]
@@ -94,10 +111,21 @@ func handleJoin(conn *websocket.Conn, msg Message) {
 	}
 	sfu.mutex.Unlock()
 
+	// Get server IP from environment
+	serverIP := os.Getenv("SERVER_IP")
+	if serverIP == "" {
+		serverIP = "localhost"
+	}
+
 	config := webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
 			{URLs: []string{"stun:stun.l.google.com:19302"}},
+			{URLs: []string{"stun:stun1.l.google.com:19302"}},
+			// Add TURN server for production
+			// {URLs: []string{"turn:" + serverIP + ":3478"}, Username: "user", Credential: "pass"},
 		},
+		BundlePolicy: webrtc.BundlePolicyMaxBundle,
+		RTCPMuxPolicy: webrtc.RTCPMuxPolicyRequire,
 	}
 
 	pc, err := webrtc.NewPeerConnection(config)
@@ -152,9 +180,9 @@ func handleJoin(conn *websocket.Conn, msg Message) {
 			}
 			room.mutex.RUnlock()
 
-			// Forward RTP packets
+			// Forward RTP packets with optimized buffer
 			go func() {
-				rtpBuf := make([]byte, 1400)
+				rtpBuf := make([]byte, 1500) // Slightly larger buffer
 				for {
 					i, _, readErr := track.Read(rtpBuf)
 					if readErr != nil {

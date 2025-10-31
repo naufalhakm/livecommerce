@@ -15,28 +15,40 @@ class SFUService {
     this.roomId = roomId;
     this.role = role;
     
-    try {
-      this.ws = new WebSocket(`${sfuUrl}/ws`);
-      
-      this.ws.onopen = () => {
-        console.log('🔗 SFU WebSocket connected');
-        this.joinRoom();
-      };
+    return new Promise((resolve, reject) => {
+      try {
+        // Remove /ws suffix since nginx proxy handles the path
+        this.ws = new WebSocket(sfuUrl);
+        
+        const timeout = setTimeout(() => {
+          reject(new Error('SFU connection timeout'));
+        }, 5000);
+        
+        this.ws.onopen = () => {
+          clearTimeout(timeout);
+          console.log('🔗 SFU WebSocket connected');
+          this.joinRoom();
+          resolve();
+        };
 
-      this.ws.onmessage = (event) => {
-        const message = JSON.parse(event.data);
-        this.handleMessage(message);
-      };
+        this.ws.onmessage = (event) => {
+          const message = JSON.parse(event.data);
+          this.handleMessage(message);
+        };
 
-      this.ws.onerror = (error) => {
-        console.error('❌ SFU WebSocket error:', error);
+        this.ws.onerror = (error) => {
+          clearTimeout(timeout);
+          console.error('❌ SFU WebSocket error:', error);
+          if (this.onError) this.onError(error);
+          reject(error);
+        };
+
+      } catch (error) {
+        console.error('❌ SFU connection error:', error);
         if (this.onError) this.onError(error);
-      };
-
-    } catch (error) {
-      console.error('❌ SFU connection error:', error);
-      if (this.onError) this.onError(error);
-    }
+        reject(error);
+      }
+    });
   }
 
   async joinRoom() {
@@ -57,8 +69,10 @@ class SFUService {
   async setupPeerConnection() {
     this.pc = new RTCPeerConnection({
       iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' }
-      ]
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ],
+      iceCandidatePoolSize: 10
     });
 
     this.pc.onicecandidate = (event) => {
