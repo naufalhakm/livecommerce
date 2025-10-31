@@ -147,10 +147,15 @@ func handleJoin(conn *websocket.Conn, msg Message) {
 
 	pc.OnICECandidate(func(candidate *webrtc.ICECandidate) {
 		if candidate != nil {
-			conn.WriteJSON(Message{
+			response := Message{
 				Type: "ice",
 				Data: candidate.ToJSON(),
-			})
+				Room: roomID,
+				ClientID: clientID,
+			}
+			if err := conn.WriteJSON(response); err != nil {
+				log.Printf("Error sending ICE candidate: %v", err)
+			}
 		}
 	})
 
@@ -211,10 +216,16 @@ func handleJoin(conn *websocket.Conn, msg Message) {
 		room.mutex.RUnlock()
 	}
 
-	conn.WriteJSON(Message{
+	// Send joined response
+	response := Message{
 		Type: "joined",
 		Data: map[string]string{"status": "success"},
-	})
+		Room: roomID,
+		ClientID: clientID,
+	}
+	if err := conn.WriteJSON(response); err != nil {
+		log.Printf("Error sending joined response: %v", err)
+	}
 }
 
 func handleOffer(conn *websocket.Conn, msg Message) {
@@ -277,10 +288,15 @@ func handleOffer(conn *websocket.Conn, msg Message) {
 		return
 	}
 
-	conn.WriteJSON(Message{
+	response := Message{
 		Type: "answer",
 		Data: map[string]string{"sdp": answer.SDP},
-	})
+		Room: roomID,
+		ClientID: clientID,
+	}
+	if err := conn.WriteJSON(response); err != nil {
+		log.Printf("Error sending answer: %v", err)
+	}
 }
 
 func handleICE(conn *websocket.Conn, msg Message) {

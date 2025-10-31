@@ -32,8 +32,16 @@ class SFUService {
         };
 
         this.ws.onmessage = (event) => {
-          const message = JSON.parse(event.data);
-          this.handleMessage(message);
+          try {
+            if (!event.data || event.data.trim() === '') {
+              console.warn('⚠️ SFU: Received empty message');
+              return;
+            }
+            const message = JSON.parse(event.data);
+            this.handleMessage(message);
+          } catch (error) {
+            console.error('❌ SFU: JSON parse error:', error, 'Raw data:', event.data);
+          }
         };
 
         this.ws.onerror = (error) => {
