@@ -127,10 +127,11 @@ const LiveStreamSeller = () => {
           await webrtcDirectService.connect(sellerId, 'publisher', `seller-${sellerId}`);
           console.log('🎥 SELLER: Stream ready for direct WebRTC');
         } else {
-          // SFU for scalable streaming
+          // SFU for scalable streaming - CRITICAL: Set stream BEFORE connect
           await sfuService.setLocalStream(stream);
+          console.log('🎥 SELLER: Local stream set, connecting as publisher...');
           await sfuService.connect(sellerId, 'publisher');
-          console.log('🎥 SELLER: Stream published to SFU');
+          console.log('🎥 SELLER: Connected to SFU as publisher');
         }
         
         // Start frame processing for ML prediction

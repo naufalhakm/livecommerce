@@ -114,9 +114,14 @@ class SFUService {
     };
 
     if (this.role === 'publisher' && this.localStream) {
+      console.log('🎥 SFU: Adding tracks to peer connection...');
       this.localStream.getTracks().forEach(track => {
+        console.log(`🎥 SFU: Adding ${track.kind} track`);
         this.pc.addTrack(track, this.localStream);
       });
+      console.log(`🎥 SFU: Added ${this.localStream.getTracks().length} tracks`);
+    } else if (this.role === 'publisher') {
+      console.error('❌ SFU: Publisher has no local stream!');
     }
 
     const offer = await this.pc.createOffer({
