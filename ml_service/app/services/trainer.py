@@ -31,49 +31,68 @@ class TrainerService:
             return []
     
     def crop_objects_from_image(self, image_data):
-        """Detect and crop objects from image using YOLO"""
+        """Detect and crop objects from image using YOLO11"""
         try:
             image = Image.open(io.BytesIO(image_data))
-            results = self.yolo_detector.model(image, conf=0.3)
             
-            # Product-related classes (exclude person=0)
+            # Use optimized YOLO11 detection
+            detections = self.yolo_detector.detect(
+                image, 
+                conf_threshold=self.config.YOLO_CONF_THRESHOLD,
+                iou_threshold=self.config.YOLO_IOU_THRESHOLD
+            )
+            
+            # Enhanced product classes for e-commerce
             product_classes = {
-                24: 'handbag', 39: 'bottle', 40: 'wine glass', 41: 'cup', 42: 'fork', 43: 'knife', 44: 'spoon', 45: 'bowl',
-                46: 'banana', 47: 'apple', 56: 'chair', 57: 'couch', 62: 'tv', 63: 'laptop', 64: 'mouse', 65: 'remote',
-                66: 'keyboard', 67: 'cell phone', 73: 'book', 74: 'clock', 75: 'vase', 76: 'scissors', 77: 'teddy bear'
+                # Electronics
+                62: 'tv', 63: 'laptop', 64: 'mouse', 65: 'remote', 66: 'keyboard', 67: 'cell phone',
+                # Fashion & Accessories
+                24: 'handbag', 25: 'tie', 26: 'suitcase',
+                # Kitchen & Dining
+                39: 'bottle', 40: 'wine glass', 41: 'cup', 42: 'fork', 43: 'knife', 44: 'spoon', 45: 'bowl',
+                68: 'microwave', 69: 'oven', 70: 'toaster', 72: 'refrigerator',
+                # Home & Garden
+                56: 'chair', 57: 'couch', 58: 'potted plant', 59: 'bed', 60: 'dining table',
+                73: 'book', 74: 'clock', 75: 'vase', 76: 'scissors', 77: 'teddy bear',
+                # Food Items
+                46: 'banana', 47: 'apple', 48: 'sandwich', 49: 'orange', 50: 'broccoli', 51: 'carrot',
+                52: 'hot dog', 53: 'pizza', 54: 'donut', 55: 'cake'
             }
             
             cropped_objects = []
-            for result in results:
-                boxes = result.boxes
-                if boxes is not None:
-                    for box in boxes:
-                        class_id = int(box.cls[0].cpu().numpy())
-                        confidence = box.conf[0].cpu().numpy()
-                        
-                        # Skip person class and low confidence
-                        if class_id == 0 or confidence < 0.4:
-                            continue
-                        
-                        x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-                        width = x2 - x1
-                        height = y2 - y1
-                        
-                        if width < 50 or height < 50:
-                            continue
-                        
-                        # Crop with padding
-                        padding = 10
-                        x1 = max(0, int(x1) - padding)
-                        y1 = max(0, int(y1) - padding)
-                        x2 = min(image.width, int(x2) + padding)
-                        y2 = min(image.height, int(y2) + padding)
-                        
-                        cropped = image.crop((x1, y1, x2, y2))
-                        
-                        img_byte_arr = io.BytesIO()
-                        cropped.save(img_byte_arr, format='JPEG')
-                        cropped_objects.append(img_byte_arr.getvalue())
+            for detection in detections:
+                class_id = detection['class_id']
+                confidence = detection['confidence']
+                
+                # Skip person class and focus on products
+                if class_id == 0 or class_id not in product_classes:
+                    continue
+                
+                x1, y1, x2, y2 = detection['bbox']
+                width, height = x2 - x1, y2 - y1
+                
+                # Enhanced size filtering
+                if width < self.config.MIN_OBJECT_SIZE or height < self.config.MIN_OBJECT_SIZE:
+                    continue
+                
+                # Smart padding based on object size
+                padding = max(5, min(20, int(min(width, height) * 0.1)))
+                x1 = max(0, x1 - padding)
+                y1 = max(0, y1 - padding)
+                x2 = min(image.width, x2 + padding)
+                y2 = min(image.height, y2 + padding)
+                
+                cropped = image.crop((x1, y1, x2, y2))
+                
+                # Resize if too large (optimize for CLIP)
+                if cropped.width > 512 or cropped.height > 512:
+                    cropped.thumbnail((512, 512), Image.Resampling.LANCZOS)
+                
+                img_byte_arr = io.BytesIO()
+                cropped.save(img_byte_arr, format='JPEG', quality=85, optimize=True)
+                cropped_objects.append(img_byte_arr.getvalue())
+                
+                logger.info(f"Cropped {product_classes[class_id]} (conf: {confidence:.2f})")
             
             return cropped_objects
         except Exception as e:
@@ -263,10 +282,14 @@ class TrainerService:
         image = Image.open(io.BytesIO(image_data)).convert('RGB')
         logger.info(f"📷 Image size: {image.size}")
         
-        # YOLO detection
-        logger.info(f"🤖 Running YOLO detection")
-        detections = self.yolo_detector.detect(image)
-        logger.info(f"🎯 YOLO found {len(detections)} detections")
+        # YOLO11 optimized detection
+        logger.info(f"🤖 Running YOLO11 detection")
+        detections = self.yolo_detector.detect(
+            image,
+            conf_threshold=self.config.YOLO_CONF_THRESHOLD,
+            iou_threshold=self.config.YOLO_IOU_THRESHOLD
+        )
+        logger.info(f"🎯 YOLO11 found {len(detections)} detections")
         
         predictions = []
         all_detections = []

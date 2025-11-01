@@ -14,6 +14,11 @@ class Config:
         self.MODELS_DIR.mkdir(exist_ok=True)
         
         # Model configurations
-        self.YOLO_MODEL = "yolov8n.pt"
+        self.YOLO_MODEL = "yolo11n.pt"
         self.CLIP_MODEL = "openai/clip-vit-base-patch32"
         self.EMBEDDING_DIM = 512
+        
+        # YOLO11 optimized settings
+        self.YOLO_CONF_THRESHOLD = 0.4
+        self.YOLO_IOU_THRESHOLD = 0.5
+        self.MIN_OBJECT_SIZE = 30

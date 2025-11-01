@@ -5,7 +5,7 @@ torchvision>=0.21.0
 transformers>=4.21.0
 faiss-gpu
 opencv-python
-ultralytics
+ultralytics>=8.3.223
 pillow
 numpy
 python-multipart
