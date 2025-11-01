@@ -11,9 +11,6 @@ export default defineConfig({
       'localhost',
       '127.0.0.1'
     ],
-    hmr: {
-      port: 3000,
-      host: 'localhost'
-    }
+    hmr: false
   }
 })

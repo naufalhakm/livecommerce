@@ -168,7 +168,7 @@ func handleJoin(conn *websocket.Conn, msg Message) {
 
 	if role == "publisher" {
 		pc.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
-			log.Printf("Publisher track received: %s", track.Kind())
+			log.Printf("🎥 Publisher track received: %s from %s", track.Kind(), clientID)
 
 			// Create local track for forwarding
 			localTrack, err := webrtc.NewTrackLocalStaticRTP(track.Codec().RTPCodecCapability, track.ID(), track.StreamID())
@@ -184,9 +184,9 @@ func handleJoin(conn *websocket.Conn, msg Message) {
 			for _, otherClient := range room.clients {
 				if otherClient.role == "viewer" && otherClient.id != clientID {
 					if _, err := otherClient.pc.AddTrack(localTrack); err != nil {
-						log.Printf("Error adding track to viewer %s: %v", otherClient.id, err)
+						log.Printf("❌ Error adding track to viewer %s: %v", otherClient.id, err)
 					} else {
-						log.Printf("Track added to viewer %s, triggering renegotiation", otherClient.id)
+						log.Printf("✅ Track added to viewer %s, triggering renegotiation", otherClient.id)
 						
 						// Create new offer for viewer
 						go func(viewerClient *Client) {
@@ -302,9 +302,10 @@ func handleOffer(conn *websocket.Conn, msg Message) {
 	}
 
 	if err := client.pc.SetRemoteDescription(offer); err != nil {
-		log.Printf("Error setting remote description: %v", err)
+		log.Printf("❌ Error setting remote description for %s: %v", clientID, err)
 		return
 	}
+	log.Printf("✅ Remote description set for %s", clientID)
 
 	answer, err := client.pc.CreateAnswer(nil)
 	if err != nil {
