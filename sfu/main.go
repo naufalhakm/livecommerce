@@ -66,24 +66,34 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
+	var currentClient *Client
+	var currentRoom *Room
+
 	for {
 		var msg Message
 		if err := conn.ReadJSON(&msg); err != nil {
+			log.Printf("WebSocket read error: %v", err)
 			break
 		}
 
 		switch msg.Type {
 		case "join":
-			handleJoin(conn, msg)
+			currentClient, currentRoom = handleJoin(conn, msg)
 		case "offer":
 			handleOffer(conn, msg)
 		case "ice":
 			handleICE(conn, msg)
 		}
 	}
+
+	// Clean up client on disconnect
+	if currentClient != nil && currentRoom != nil {
+		log.Printf("🔌 Client %s disconnecting, cleaning up...", currentClient.id)
+		cleanupClient(currentClient, currentRoom)
+	}
 }
 
-func handleJoin(conn *websocket.Conn, msg Message) {
+func handleJoin(conn *websocket.Conn, msg Message) (*Client, *Room) {
 	data := msg.Data.(map[string]interface{})
 	roomID := msg.Room
 	clientID := data["client_id"].(string)
@@ -121,17 +131,16 @@ func handleJoin(conn *websocket.Conn, msg Message) {
 		ICEServers: []webrtc.ICEServer{
 			{URLs: []string{"stun:stun.l.google.com:19302"}},
 			{URLs: []string{"stun:stun1.l.google.com:19302"}},
-			// Add TURN server for production
-			// {URLs: []string{"turn:" + serverIP + ":3478"}, Username: "user", Credential: "pass"},
+			{URLs: []string{"stun:stun2.l.google.com:19302"}},
+			{URLs: []string{"stun:stun3.l.google.com:19302"}},
+			{URLs: []string{"stun:stun4.l.google.com:19302"}},
 		},
-		BundlePolicy: webrtc.BundlePolicyMaxBundle,
-		RTCPMuxPolicy: webrtc.RTCPMuxPolicyRequire,
 	}
 
 	pc, err := webrtc.NewPeerConnection(config)
 	if err != nil {
 		log.Printf("Failed to create peer connection: %v", err)
-		return
+		return nil, nil
 	}
 
 	client := &Client{
@@ -157,8 +166,11 @@ func handleJoin(conn *websocket.Conn, msg Message) {
 						Room: roomID,
 						ClientID: clientID,
 					}
-					if err := otherClient.conn.WriteJSON(response); err != nil {
-						log.Printf("Error sending ICE candidate to %s: %v", otherClient.id, err)
+					// Check if connection is still open before sending
+					if isConnectionOpen(otherClient.conn) {
+						if err := otherClient.conn.WriteJSON(response); err != nil {
+							log.Printf("Error sending ICE candidate to %s: %v", otherClient.id, err)
+						}
 					}
 				}
 			}
@@ -207,7 +219,9 @@ func handleJoin(conn *websocket.Conn, msg Message) {
 								Room: roomID,
 								ClientID: viewerClient.id,
 							}
-							viewerClient.conn.WriteJSON(response)
+							if isConnectionOpen(viewerClient.conn) {
+								viewerClient.conn.WriteJSON(response)
+							}
 						}(otherClient)
 					}
 				}
@@ -255,6 +269,8 @@ func handleJoin(conn *websocket.Conn, msg Message) {
 	if err := conn.WriteJSON(response); err != nil {
 		log.Printf("Error sending joined response: %v", err)
 	}
+
+	return client, room
 }
 
 func handleOffer(conn *websocket.Conn, msg Message) {
@@ -324,8 +340,10 @@ func handleOffer(conn *websocket.Conn, msg Message) {
 		Room: roomID,
 		ClientID: clientID,
 	}
-	if err := conn.WriteJSON(response); err != nil {
-		log.Printf("Error sending answer: %v", err)
+	if isConnectionOpen(conn) {
+		if err := conn.WriteJSON(response); err != nil {
+			log.Printf("Error sending answer: %v", err)
+		}
 	}
 }
 
@@ -383,4 +401,57 @@ func handleICE(conn *websocket.Conn, msg Message) {
 	}
 
 	client.pc.AddICECandidate(candidate)
+}
+
+func cleanupClient(client *Client, room *Room) {
+	room.mutex.Lock()
+	delete(room.clients, client.id)
+	room.mutex.Unlock()
+
+	if client.pc != nil {
+		client.pc.Close()
+	}
+
+	log.Printf("✅ Client %s cleaned up from room %s", client.id, room.id)
+}
+
+func isConnectionOpen(conn *websocket.Conn) bool {
+	// Check if connection is nil first
+	if conn == nil {
+		return false
+	}
+	
+	// Try to write a ping to check if connection is alive
+	err := conn.WriteMessage(websocket.PingMessage, []byte{})
+	return err == nil
+}
+
+// Periodic cleanup of stale connections
+func init() {
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		
+		for range ticker.C {
+			cleanupStaleConnections()
+		}
+	}()
+}
+
+func cleanupStaleConnections() {
+	sfu.mutex.RLock()
+	for roomID, room := range sfu.rooms {
+		room.mutex.Lock()
+		for clientID, client := range room.clients {
+			if !isConnectionOpen(client.conn) {
+				log.Printf("🧹 Cleaning up stale client %s from room %s", clientID, roomID)
+				delete(room.clients, clientID)
+				if client.pc != nil {
+					client.pc.Close()
+				}
+			}
+		}
+		room.mutex.Unlock()
+	}
+	sfu.mutex.RUnlock()
 }

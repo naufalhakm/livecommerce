@@ -78,9 +78,13 @@ class SFUService {
     this.pc = new RTCPeerConnection({
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' }
       ],
-      iceCandidatePoolSize: 10
+      iceCandidatePoolSize: 10,
+      iceTransportPolicy: 'all'
     });
 
     this.pc.onicecandidate = (event) => {
@@ -110,6 +114,14 @@ class SFUService {
       console.log('SFU connection state:', this.pc.connectionState);
       if (this.pc.connectionState === 'connected' && this.onConnect) {
         this.onConnect();
+      } else if (this.pc.connectionState === 'failed') {
+        console.error('❌ SFU: Connection failed, retrying...');
+        // Auto retry connection
+        setTimeout(() => {
+          if (this.pc.connectionState === 'failed') {
+            this.pc.restartIce();
+          }
+        }, 2000);
       }
     };
 
