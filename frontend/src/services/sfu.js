@@ -142,6 +142,29 @@ class SFUService {
           await this.setupPeerConnection();
           break;
 
+        case 'offer':
+          // Handle offer from server (for viewers when new track is added)
+          if (this.pc && this.role === 'viewer') {
+            const offer = new RTCSessionDescription({
+              type: 'offer',
+              sdp: message.data.sdp
+            });
+            await this.pc.setRemoteDescription(offer);
+            
+            const answer = await this.pc.createAnswer();
+            await this.pc.setLocalDescription(answer);
+            
+            this.sendMessage({
+              type: 'answer',
+              data: { sdp: answer.sdp },
+              room: this.roomId,
+              role: this.role,
+              client_id: this.clientId
+            });
+            console.log('✅ SFU: Answered server offer');
+          }
+          break;
+
         case 'answer':
           if (this.pc && this.pc.signalingState === 'have-local-offer') {
             const answer = new RTCSessionDescription({
@@ -156,7 +179,7 @@ class SFUService {
           break;
 
         case 'ice':
-          if (message.data.candidate && this.pc.remoteDescription) {
+          if (message.data.candidate && this.pc && this.pc.remoteDescription) {
             await this.pc.addIceCandidate(new RTCIceCandidate(message.data));
           }
           break;

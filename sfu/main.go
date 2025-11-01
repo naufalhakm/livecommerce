@@ -147,15 +147,22 @@ func handleJoin(conn *websocket.Conn, msg Message) {
 
 	pc.OnICECandidate(func(candidate *webrtc.ICECandidate) {
 		if candidate != nil {
-			response := Message{
-				Type: "ice",
-				Data: candidate.ToJSON(),
-				Room: roomID,
-				ClientID: clientID,
+			// Forward ICE candidate to all other clients in room
+			room.mutex.RLock()
+			for _, otherClient := range room.clients {
+				if otherClient.id != clientID {
+					response := Message{
+						Type: "ice",
+						Data: candidate.ToJSON(),
+						Room: roomID,
+						ClientID: clientID,
+					}
+					if err := otherClient.conn.WriteJSON(response); err != nil {
+						log.Printf("Error sending ICE candidate to %s: %v", otherClient.id, err)
+					}
+				}
 			}
-			if err := conn.WriteJSON(response); err != nil {
-				log.Printf("Error sending ICE candidate: %v", err)
-			}
+			room.mutex.RUnlock()
 		}
 	})
 
@@ -172,14 +179,36 @@ func handleJoin(conn *websocket.Conn, msg Message) {
 
 			client.localTracks = append(client.localTracks, localTrack)
 
-			// Add track to all viewers in the room
+			// Add track to all viewers and trigger renegotiation
 			room.mutex.RLock()
 			for _, otherClient := range room.clients {
 				if otherClient.role == "viewer" && otherClient.id != clientID {
 					if _, err := otherClient.pc.AddTrack(localTrack); err != nil {
 						log.Printf("Error adding track to viewer %s: %v", otherClient.id, err)
 					} else {
-						log.Printf("Track added to viewer %s", otherClient.id)
+						log.Printf("Track added to viewer %s, triggering renegotiation", otherClient.id)
+						
+						// Create new offer for viewer
+						go func(viewerClient *Client) {
+							offer, err := viewerClient.pc.CreateOffer(nil)
+							if err != nil {
+								log.Printf("Error creating offer for viewer %s: %v", viewerClient.id, err)
+								return
+							}
+							
+							if err := viewerClient.pc.SetLocalDescription(offer); err != nil {
+								log.Printf("Error setting local description for viewer %s: %v", viewerClient.id, err)
+								return
+							}
+							
+							response := Message{
+								Type: "offer",
+								Data: map[string]string{"sdp": offer.SDP},
+								Room: roomID,
+								ClientID: viewerClient.id,
+							}
+							viewerClient.conn.WriteJSON(response)
+						}(otherClient)
 					}
 				}
 			}
