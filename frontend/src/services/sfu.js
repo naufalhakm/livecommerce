@@ -8,21 +8,22 @@ class SFUService {
     this.onError = null;
     this.roomId = null;
     this.role = null;
+    this.clientId = null;
   }
 
   async connect(roomId, role = 'viewer') {
     const sfuUrl = import.meta.env.VITE_SFU_URL || 'ws://localhost:8188';
     this.roomId = roomId;
     this.role = role;
+    this.clientId = `${role}_${Date.now()}`;
     
     return new Promise((resolve, reject) => {
       try {
-        // Remove /ws suffix since nginx proxy handles the path
         this.ws = new WebSocket(sfuUrl);
         
         const timeout = setTimeout(() => {
           reject(new Error('SFU connection timeout'));
-        }, 5000);
+        }, 10000);
         
         this.ws.onopen = () => {
           clearTimeout(timeout);
@@ -33,14 +34,10 @@ class SFUService {
 
         this.ws.onmessage = (event) => {
           try {
-            if (!event.data || event.data.trim() === '') {
-              console.warn('⚠️ SFU: Received empty message');
-              return;
-            }
             const message = JSON.parse(event.data);
             this.handleMessage(message);
           } catch (error) {
-            console.error('❌ SFU: JSON parse error:', error, 'Raw data:', event.data);
+            console.error('❌ SFU: JSON parse error:', error);
           }
         };
 
@@ -51,6 +48,10 @@ class SFUService {
           reject(error);
         };
 
+        this.ws.onclose = () => {
+          console.log('🔌 SFU WebSocket closed');
+        };
+
       } catch (error) {
         console.error('❌ SFU connection error:', error);
         if (this.onError) this.onError(error);
@@ -59,41 +60,63 @@ class SFUService {
     });
   }
 
-  async joinRoom() {
-    this.clientId = `${this.role}_${Date.now()}`;
-    
-    // Join room first
+  joinRoom() {
     this.sendMessage({
       type: 'join',
       data: {
         client_id: this.clientId,
         role: this.role
       },
-      room: this.roomId,
-      role: this.role
+      room: this.roomId
     });
+  }
+
+  async handleMessage(message) {
+    try {
+      switch (message.type) {
+        case 'joined':
+          console.log('✅ SFU: Joined room, setting up peer connection');
+          await this.setupPeerConnection();
+          break;
+
+        case 'answer':
+          if (this.pc && this.pc.signalingState === 'have-local-offer') {
+            const answer = new RTCSessionDescription({
+              type: 'answer',
+              sdp: message.data.sdp
+            });
+            await this.pc.setRemoteDescription(answer);
+            console.log('✅ SFU: Answer received');
+          }
+          break;
+
+        case 'ice-candidate':
+          if (this.pc && this.pc.remoteDescription) {
+            await this.pc.addIceCandidate(new RTCIceCandidate(message.data));
+          }
+          break;
+
+        default:
+          console.log('SFU: Unknown message type:', message.type);
+      }
+    } catch (error) {
+      console.error('❌ SFU: Error handling message:', error);
+    }
   }
 
   async setupPeerConnection() {
     this.pc = new RTCPeerConnection({
       iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        { urls: 'stun:stun3.l.google.com:19302' },
-        { urls: 'stun:stun4.l.google.com:19302' }
-      ],
-      iceCandidatePoolSize: 10
+        { urls: 'stun:stun.l.google.com:19302' }
+      ]
     });
 
     this.pc.onicecandidate = (event) => {
       if (event.candidate) {
         this.sendMessage({
-          type: 'ice',
+          type: 'ice-candidate',
           data: event.candidate.toJSON(),
-          room: this.roomId,
-          role: this.role,
-          client_id: this.clientId
+          room: this.roomId
         });
       }
     };
@@ -115,7 +138,7 @@ class SFUService {
       }
     };
 
-    // Only publishers send tracks
+    // Add local stream tracks if publisher
     if (this.role === 'publisher' && this.localStream) {
       console.log('🎥 SFU: Adding tracks to peer connection...');
       this.localStream.getTracks().forEach(track => {
@@ -123,79 +146,20 @@ class SFUService {
         this.pc.addTrack(track, this.localStream);
       });
       console.log(`🎥 SFU: Added ${this.localStream.getTracks().length} tracks`);
-      
-      // Publisher creates offer
-      const offer = await this.pc.createOffer();
-      await this.pc.setLocalDescription(offer);
-
-      this.sendMessage({
-        type: 'offer',
-        data: { sdp: offer.sdp },
-        room: this.roomId,
-        role: this.role,
-        client_id: this.clientId
-      });
-    } else if (this.role === 'publisher') {
-      console.error('❌ SFU: Publisher has no local stream!');
     }
-    // Viewers wait for server offers
-  }
 
-  async handleMessage(message) {
-    try {
-      switch (message.type) {
-        case 'joined':
-          console.log('✅ SFU: Joined room, setting up peer connection');
-          await this.setupPeerConnection();
-          break;
+    // Create and send offer
+    const offer = await this.pc.createOffer({
+      offerToReceiveAudio: true,
+      offerToReceiveVideo: true
+    });
+    await this.pc.setLocalDescription(offer);
 
-        case 'offer':
-          // Server is offering us a new track (for viewers)
-          if (this.pc && this.role === 'viewer') {
-            const offer = new RTCSessionDescription({
-              type: 'offer',
-              sdp: message.data.sdp
-            });
-            await this.pc.setRemoteDescription(offer);
-            
-            const answer = await this.pc.createAnswer();
-            await this.pc.setLocalDescription(answer);
-            
-            this.sendMessage({
-              type: 'answer',
-              data: { sdp: answer.sdp },
-              room: this.roomId,
-              role: this.role,
-              client_id: this.clientId
-            });
-            console.log('✅ SFU: Answered server offer');
-          }
-          break;
-
-        case 'answer':
-          // Server answered our offer (for publishers)
-          if (this.pc && this.pc.signalingState === 'have-local-offer') {
-            const answer = new RTCSessionDescription({
-              type: 'answer',
-              sdp: message.data.sdp
-            });
-            await this.pc.setRemoteDescription(answer);
-            console.log('✅ SFU: Answer received, connection establishing');
-          }
-          break;
-
-        case 'ice':
-          if (message.data && this.pc && this.pc.remoteDescription) {
-            await this.pc.addIceCandidate(new RTCIceCandidate(message.data));
-          }
-          break;
-
-        default:
-          console.log('SFU: Unknown message type:', message.type);
-      }
-    } catch (error) {
-      console.error('❌ SFU: Error handling message:', error);
-    }
+    this.sendMessage({
+      type: 'offer',
+      data: { sdp: offer.sdp },
+      room: this.roomId
+    });
   }
 
   sendMessage(message) {

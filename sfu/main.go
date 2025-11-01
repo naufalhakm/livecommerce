@@ -10,39 +10,37 @@ import (
 	"github.com/pion/webrtc/v3"
 )
 
-type SFU struct {
+type Hub struct {
 	rooms map[string]*Room
 	mutex sync.RWMutex
 }
 
 type Room struct {
-	id          string
-	publisher   *Client
-	viewers     map[string]*Client
-	localTracks []*webrtc.TrackLocalStaticRTP
-	mutex       sync.RWMutex
+	id        string
+	clients   map[string]*Client
+	mutex     sync.RWMutex
 }
 
 type Client struct {
-	id   string
-	conn *websocket.Conn
-	pc   *webrtc.PeerConnection
-	role string
+	id       string
+	conn     *websocket.Conn
+	pc       *webrtc.PeerConnection
+	role     string
+	tracks   []*webrtc.TrackLocalStaticRTP
 }
 
 type Message struct {
-	Type     string          `json:"type"`
-	Data     json.RawMessage `json:"data"`
-	Room     string          `json:"room"`
-	Role     string          `json:"role"`
-	ClientID string          `json:"client_id,omitempty"`
+	Type string          `json:"type"`
+	Data json.RawMessage `json:"data"`
+	Room string          `json:"room"`
+	From string          `json:"from,omitempty"`
 }
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
-var sfu = &SFU{
+var hub = &Hub{
 	rooms: make(map[string]*Room),
 }
 
@@ -55,18 +53,13 @@ func main() {
 
 func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "*")
-
+	
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("WebSocket upgrade error: %v", err)
 		return
 	}
 	defer conn.Close()
-
-	var currentClient *Client
-	var currentRoom *Room
 
 	for {
 		var msg Message
@@ -77,198 +70,211 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 		switch msg.Type {
 		case "join":
-			currentClient, currentRoom = handleJoin(conn, msg)
+			handleJoin(conn, msg)
 		case "offer":
 			handleOffer(conn, msg)
 		case "answer":
 			handleAnswer(conn, msg)
-		case "ice":
-			handleICE(conn, msg)
+		case "ice-candidate":
+			handleIceCandidate(conn, msg)
 		}
-	}
-
-	// Cleanup on disconnect
-	if currentClient != nil && currentRoom != nil {
-		log.Printf("🔌 Client %s disconnecting", currentClient.id)
-		cleanupClient(currentClient, currentRoom)
 	}
 }
 
-func handleJoin(conn *websocket.Conn, msg Message) (*Client, *Room) {
-	var data struct {
+func handleJoin(conn *websocket.Conn, msg Message) {
+	var joinData struct {
 		ClientID string `json:"client_id"`
 		Role     string `json:"role"`
 	}
-	json.Unmarshal(msg.Data, &data)
+	json.Unmarshal(msg.Data, &joinData)
 
 	roomID := msg.Room
-	log.Printf("Client %s (%s) joining room %s", data.ClientID, data.Role, roomID)
+	log.Printf("Client %s (%s) joining room %s", joinData.ClientID, joinData.Role, roomID)
 
 	// Get or create room
-	sfu.mutex.Lock()
-	room, exists := sfu.rooms[roomID]
+	hub.mutex.Lock()
+	room, exists := hub.rooms[roomID]
 	if !exists {
 		room = &Room{
 			id:      roomID,
-			viewers: make(map[string]*Client),
+			clients: make(map[string]*Client),
 		}
-		sfu.rooms[roomID] = room
+		hub.rooms[roomID] = room
 	}
-	sfu.mutex.Unlock()
+	hub.mutex.Unlock()
 
-	// Create peer connection
+	// Create WebRTC peer connection
 	config := webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
 			{URLs: []string{"stun:stun.l.google.com:19302"}},
-			{URLs: []string{"stun:stun1.l.google.com:19302"}},
-			{URLs: []string{"stun:stun2.l.google.com:19302"}},
-			{URLs: []string{"stun:stun3.l.google.com:19302"}},
-			{URLs: []string{"stun:stun4.l.google.com:19302"}},
 		},
 	}
 
 	pc, err := webrtc.NewPeerConnection(config)
 	if err != nil {
 		log.Printf("Failed to create peer connection: %v", err)
-		return nil, nil
+		return
 	}
 
 	client := &Client{
-		id:   data.ClientID,
+		id:   joinData.ClientID,
 		conn: conn,
 		pc:   pc,
-		role: data.Role,
+		role: joinData.Role,
 	}
+
+	// Add client to room
+	room.mutex.Lock()
+	room.clients[joinData.ClientID] = client
+	room.mutex.Unlock()
 
 	// Setup ICE candidate handling
 	pc.OnICECandidate(func(candidate *webrtc.ICECandidate) {
 		if candidate != nil {
+			candidateData, _ := json.Marshal(candidate.ToJSON())
 			response := Message{
-				Type: "ice",
-				Data: mustMarshal(candidate.ToJSON()),
+				Type: "ice-candidate",
+				Data: candidateData,
 				Room: roomID,
+				From: joinData.ClientID,
 			}
 			conn.WriteJSON(response)
 		}
 	})
 
-	room.mutex.Lock()
-	if data.Role == "publisher" {
-		if room.publisher != nil {
-			// Close existing publisher
-			room.publisher.pc.Close()
-		}
-		room.publisher = client
-		
-		// Setup track handling for publisher
-		pc.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
-			log.Printf("🎥 Received %s track from publisher", track.Kind())
-			
-			// Create local track for forwarding
-			localTrack, err := webrtc.NewTrackLocalStaticRTP(track.Codec().RTPCodecCapability, track.ID(), track.StreamID())
+	// Setup connection state monitoring
+	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
+		log.Printf("Client %s connection state: %s", joinData.ClientID, state.String())
+	})
+
+	if joinData.Role == "publisher" {
+		// Publisher receives tracks and forwards them
+		pc.OnTrack(func(remoteTrack *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
+			log.Printf("Received track: %s", remoteTrack.Kind().String())
+
+			// Create a local track to forward this track to viewers
+			localTrack, err := webrtc.NewTrackLocalStaticRTP(
+				remoteTrack.Codec().RTPCodecCapability,
+				remoteTrack.ID(),
+				remoteTrack.StreamID(),
+			)
 			if err != nil {
-				log.Printf("Error creating local track: %v", err)
+				log.Printf("Failed to create local track: %v", err)
 				return
 			}
-			
-			// Add to room's local tracks
-			room.localTracks = append(room.localTracks, localTrack)
-			
-			// Add track to all existing viewers
-			for _, viewer := range room.viewers {
-				if _, err := viewer.pc.AddTrack(localTrack); err != nil {
-					log.Printf("Error adding track to viewer: %v", err)
-				} else {
-					log.Printf("✅ Track forwarded to viewer %s", viewer.id)
-					// Trigger renegotiation for viewer
-					go createOfferForViewer(viewer, roomID)
+
+			client.tracks = append(client.tracks, localTrack)
+
+			// Add this track to all viewers in the room
+			room.mutex.RLock()
+			for _, viewer := range room.clients {
+				if viewer.role == "viewer" && viewer.id != joinData.ClientID {
+					_, err := viewer.pc.AddTrack(localTrack)
+					if err != nil {
+						log.Printf("Failed to add track to viewer %s: %v", viewer.id, err)
+					} else {
+						log.Printf("Added track to viewer %s", viewer.id)
+					}
 				}
 			}
-			
-			// Forward RTP packets
+			room.mutex.RUnlock()
+
+			// Start forwarding RTP packets
 			go func() {
-				rtpBuf := make([]byte, 1500)
+				rtpBuf := make([]byte, 1400)
 				for {
-					i, _, readErr := track.Read(rtpBuf)
+					i, _, readErr := remoteTrack.Read(rtpBuf)
 					if readErr != nil {
 						return
 					}
-					if _, writeErr := localTrack.Write(rtpBuf[:i]); writeErr != nil {
+					_, writeErr := localTrack.Write(rtpBuf[:i])
+					if writeErr != nil {
 						return
 					}
 				}
 			}()
 		})
 	} else {
-		room.viewers[data.ClientID] = client
-		
-		// Add existing local tracks to this viewer
-		for _, localTrack := range room.localTracks {
-			if _, err := pc.AddTrack(localTrack); err != nil {
-				log.Printf("Error adding existing track to viewer: %v", err)
-			} else {
-				log.Printf("✅ Existing track added to viewer %s", data.ClientID)
+		// Viewer - add existing tracks from publishers
+		room.mutex.RLock()
+		for _, publisher := range room.clients {
+			if publisher.role == "publisher" {
+				for _, track := range publisher.tracks {
+					_, err := pc.AddTrack(track)
+					if err != nil {
+						log.Printf("Failed to add existing track to viewer: %v", err)
+					} else {
+						log.Printf("Added existing track to viewer %s", joinData.ClientID)
+					}
+				}
 			}
 		}
+		room.mutex.RUnlock()
 	}
-	room.mutex.Unlock()
 
-	// Send joined response
+	// Send join success response
 	response := Message{
 		Type: "joined",
-		Data: mustMarshal(map[string]string{"status": "success"}),
+		Data: json.RawMessage(`{"status":"success"}`),
 		Room: roomID,
+		From: "server",
 	}
 	conn.WriteJSON(response)
-
-	return client, room
 }
 
 func handleOffer(conn *websocket.Conn, msg Message) {
-	var data struct {
+	var offerData struct {
 		SDP string `json:"sdp"`
 	}
-	json.Unmarshal(msg.Data, &data)
+	json.Unmarshal(msg.Data, &offerData)
 
 	client := findClientByConn(conn, msg.Room)
 	if client == nil {
 		return
 	}
 
+	// Set remote description
 	offer := webrtc.SessionDescription{
 		Type: webrtc.SDPTypeOffer,
-		SDP:  data.SDP,
+		SDP:  offerData.SDP,
 	}
 
-	if err := client.pc.SetRemoteDescription(offer); err != nil {
-		log.Printf("Error setting remote description: %v", err)
+	err := client.pc.SetRemoteDescription(offer)
+	if err != nil {
+		log.Printf("Failed to set remote description: %v", err)
 		return
 	}
 
+	// Create answer
 	answer, err := client.pc.CreateAnswer(nil)
 	if err != nil {
-		log.Printf("Error creating answer: %v", err)
+		log.Printf("Failed to create answer: %v", err)
 		return
 	}
 
-	if err := client.pc.SetLocalDescription(answer); err != nil {
-		log.Printf("Error setting local description: %v", err)
+	// Set local description
+	err = client.pc.SetLocalDescription(answer)
+	if err != nil {
+		log.Printf("Failed to set local description: %v", err)
 		return
 	}
 
+	// Send answer back
+	answerData, _ := json.Marshal(map[string]string{"sdp": answer.SDP})
 	response := Message{
 		Type: "answer",
-		Data: mustMarshal(map[string]string{"sdp": answer.SDP}),
+		Data: answerData,
 		Room: msg.Room,
+		From: "server",
 	}
 	conn.WriteJSON(response)
 }
 
 func handleAnswer(conn *websocket.Conn, msg Message) {
-	var data struct {
+	var answerData struct {
 		SDP string `json:"sdp"`
 	}
-	json.Unmarshal(msg.Data, &data)
+	json.Unmarshal(msg.Data, &answerData)
 
 	client := findClientByConn(conn, msg.Room)
 	if client == nil {
@@ -277,53 +283,34 @@ func handleAnswer(conn *websocket.Conn, msg Message) {
 
 	answer := webrtc.SessionDescription{
 		Type: webrtc.SDPTypeAnswer,
-		SDP:  data.SDP,
+		SDP:  answerData.SDP,
 	}
 
-	if err := client.pc.SetRemoteDescription(answer); err != nil {
-		log.Printf("Error setting remote description: %v", err)
-		return
+	err := client.pc.SetRemoteDescription(answer)
+	if err != nil {
+		log.Printf("Failed to set remote description: %v", err)
 	}
 }
 
-func handleICE(conn *websocket.Conn, msg Message) {
-	var data webrtc.ICECandidateInit
-	json.Unmarshal(msg.Data, &data)
+func handleIceCandidate(conn *websocket.Conn, msg Message) {
+	var candidateData webrtc.ICECandidateInit
+	json.Unmarshal(msg.Data, &candidateData)
 
 	client := findClientByConn(conn, msg.Room)
 	if client == nil {
 		return
 	}
 
-	if err := client.pc.AddICECandidate(data); err != nil {
-		log.Printf("Error adding ICE candidate: %v", err)
-	}
-}
-
-func createOfferForViewer(viewer *Client, roomID string) {
-	offer, err := viewer.pc.CreateOffer(nil)
+	err := client.pc.AddICECandidate(candidateData)
 	if err != nil {
-		log.Printf("Error creating offer for viewer: %v", err)
-		return
+		log.Printf("Failed to add ICE candidate: %v", err)
 	}
-
-	if err := viewer.pc.SetLocalDescription(offer); err != nil {
-		log.Printf("Error setting local description for viewer: %v", err)
-		return
-	}
-
-	response := Message{
-		Type: "offer",
-		Data: mustMarshal(map[string]string{"sdp": offer.SDP}),
-		Room: roomID,
-	}
-	viewer.conn.WriteJSON(response)
 }
 
 func findClientByConn(conn *websocket.Conn, roomID string) *Client {
-	sfu.mutex.RLock()
-	room := sfu.rooms[roomID]
-	sfu.mutex.RUnlock()
+	hub.mutex.RLock()
+	room := hub.rooms[roomID]
+	hub.mutex.RUnlock()
 
 	if room == nil {
 		return nil
@@ -332,40 +319,10 @@ func findClientByConn(conn *websocket.Conn, roomID string) *Client {
 	room.mutex.RLock()
 	defer room.mutex.RUnlock()
 
-	if room.publisher != nil && room.publisher.conn == conn {
-		return room.publisher
-	}
-
-	for _, viewer := range room.viewers {
-		if viewer.conn == conn {
-			return viewer
+	for _, client := range room.clients {
+		if client.conn == conn {
+			return client
 		}
 	}
-
 	return nil
-}
-
-func cleanupClient(client *Client, room *Room) {
-	room.mutex.Lock()
-	defer room.mutex.Unlock()
-
-	if client.role == "publisher" && room.publisher == client {
-		room.publisher = nil
-		log.Printf("✅ Publisher %s removed from room %s", client.id, room.id)
-	} else {
-		delete(room.viewers, client.id)
-		log.Printf("✅ Viewer %s removed from room %s", client.id, room.id)
-	}
-
-	if client.pc != nil {
-		client.pc.Close()
-	}
-}
-
-func mustMarshal(v interface{}) json.RawMessage {
-	data, err := json.Marshal(v)
-	if err != nil {
-		panic(err)
-	}
-	return data
 }
