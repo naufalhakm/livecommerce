@@ -83,19 +83,14 @@ class SFUService {
         { urls: 'stun:stun3.l.google.com:19302' },
         { urls: 'stun:stun4.l.google.com:19302' }
       ],
-      iceCandidatePoolSize: 10,
-      iceTransportPolicy: 'all'
+      iceCandidatePoolSize: 10
     });
 
     this.pc.onicecandidate = (event) => {
       if (event.candidate) {
         this.sendMessage({
           type: 'ice',
-          data: {
-            candidate: event.candidate.candidate,
-            sdpMLineIndex: event.candidate.sdpMLineIndex,
-            sdpMid: event.candidate.sdpMid
-          },
+          data: event.candidate.toJSON(),
           room: this.roomId,
           role: this.role,
           client_id: this.clientId
@@ -115,16 +110,12 @@ class SFUService {
       if (this.pc.connectionState === 'connected' && this.onConnect) {
         this.onConnect();
       } else if (this.pc.connectionState === 'failed') {
-        console.error('❌ SFU: Connection failed, retrying...');
-        // Auto retry connection
-        setTimeout(() => {
-          if (this.pc.connectionState === 'failed') {
-            this.pc.restartIce();
-          }
-        }, 2000);
+        console.error('❌ SFU: Connection failed');
+        if (this.onError) this.onError(new Error('WebRTC connection failed'));
       }
     };
 
+    // Only publishers send tracks
     if (this.role === 'publisher' && this.localStream) {
       console.log('🎥 SFU: Adding tracks to peer connection...');
       this.localStream.getTracks().forEach(track => {
@@ -132,23 +123,22 @@ class SFUService {
         this.pc.addTrack(track, this.localStream);
       });
       console.log(`🎥 SFU: Added ${this.localStream.getTracks().length} tracks`);
+      
+      // Publisher creates offer
+      const offer = await this.pc.createOffer();
+      await this.pc.setLocalDescription(offer);
+
+      this.sendMessage({
+        type: 'offer',
+        data: { sdp: offer.sdp },
+        room: this.roomId,
+        role: this.role,
+        client_id: this.clientId
+      });
     } else if (this.role === 'publisher') {
       console.error('❌ SFU: Publisher has no local stream!');
     }
-
-    const offer = await this.pc.createOffer({
-      offerToReceiveAudio: true,
-      offerToReceiveVideo: true
-    });
-    await this.pc.setLocalDescription(offer);
-
-    this.sendMessage({
-      type: 'offer',
-      data: { sdp: offer.sdp },
-      room: this.roomId,
-      role: this.role,
-      client_id: this.clientId
-    });
+    // Viewers wait for server offers
   }
 
   async handleMessage(message) {
@@ -160,7 +150,7 @@ class SFUService {
           break;
 
         case 'offer':
-          // Handle offer from server (for viewers when new track is added)
+          // Server is offering us a new track (for viewers)
           if (this.pc && this.role === 'viewer') {
             const offer = new RTCSessionDescription({
               type: 'offer',
@@ -183,20 +173,19 @@ class SFUService {
           break;
 
         case 'answer':
+          // Server answered our offer (for publishers)
           if (this.pc && this.pc.signalingState === 'have-local-offer') {
             const answer = new RTCSessionDescription({
               type: 'answer',
               sdp: message.data.sdp
             });
             await this.pc.setRemoteDescription(answer);
-            console.log('✅ SFU: Answer set, connection establishing');
-          } else {
-            console.warn('⚠️ SFU: Received answer in wrong state:', this.pc?.signalingState);
+            console.log('✅ SFU: Answer received, connection establishing');
           }
           break;
 
         case 'ice':
-          if (message.data.candidate && this.pc && this.pc.remoteDescription) {
+          if (message.data && this.pc && this.pc.remoteDescription) {
             await this.pc.addIceCandidate(new RTCIceCandidate(message.data));
           }
           break;
