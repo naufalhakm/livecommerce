@@ -19,6 +19,8 @@ services:
     build: ./backend
     ports:
       - "8080:8080"
+    networks:
+      - app-network
     environment:
       - DATABASE_URL=postgresql://postgres.aoefomhdatzkcsuowqmb:DFSiOWif2PCjd4X3@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require
       - SUPABASE_URL=https://aoefomhdatzkcsuowqmb.supabase.co
@@ -36,6 +38,12 @@ services:
       - VITE_WS_URL=wss://livecomerce.laidtechnology.tech
     depends_on:
       - backend
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
 
 volumes:
   postgres_data:
