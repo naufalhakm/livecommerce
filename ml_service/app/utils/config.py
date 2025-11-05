@@ -15,8 +15,8 @@ class Config:
         
         # Model configurations
         self.YOLO_MODEL = "yolo11n.pt"
-        self.CLIP_MODEL = "openai/clip-vit-base-patch32"
-        self.EMBEDDING_DIM = 512
+        self.CLIP_MODEL = "openai/clip-vit-large-patch14-336"
+        self.EMBEDDING_DIM = 768
         
         # YOLO11 optimized settings
         self.YOLO_CONF_THRESHOLD = 0.4

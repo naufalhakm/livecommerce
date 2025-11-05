@@ -8,6 +8,7 @@ const AdminDashboard = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [trainingStatus, setTrainingStatus] = useState({});
   const [isTraining, setIsTraining] = useState(false);
+  const [showTrainingModal, setShowTrainingModal] = useState(false);
 
   useEffect(() => {
     loadProducts();
@@ -43,18 +44,17 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleTrainAllProducts = async () => {
-    if (!window.confirm('Train ML model for all products? This will take a few minutes.')) {
+  const handleTrainAllProducts = async (sellerId, fineTune = false) => {
+    const trainingType = fineTune ? 'fine-tune' : 'train';
+    if (!window.confirm(`${trainingType} ML model for Seller ${sellerId}? This will take a few minutes.`)) {
       return;
     }
     
     setIsTraining(true);
     
     try {
-      const sellerIds = [...new Set(products.map(p => p.seller_id))];
-      
-      // Use backend train endpoint
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/train?seller_id=1`, {
+      const url = `${import.meta.env.VITE_API_URL}/api/train?seller_id=${sellerId}${fineTune ? '&fine_tune=true' : ''}`;
+      const response = await fetch(url, {
         method: 'POST'
       });
       
@@ -63,7 +63,7 @@ const AdminDashboard = () => {
       }
       
       // Start polling backend for progress
-      pollTrainingProgress(sellerIds);
+      pollTrainingProgress([sellerId]);
       
     } catch (error) {
       alert('Failed to start training');
@@ -183,14 +183,14 @@ const AdminDashboard = () => {
           </div>
           <div className="flex gap-3">
             <button 
-              onClick={handleTrainAllProducts}
+              onClick={() => setShowTrainingModal(true)}
               disabled={isTraining}
               className={`flex items-center gap-2 h-10 px-4 text-white text-sm font-bold rounded-lg ${
                 isTraining ? 'bg-gray-500 cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-600'
               }`}
             >
               <Target className="w-4 h-4" />
-              <span>{isTraining ? 'Training...' : 'Train All Products'}</span>
+              <span>{isTraining ? 'Training...' : 'Train Model'}</span>
             </button>
             <button 
               onClick={() => window.location.href = '/admin/products/create'}
@@ -349,6 +349,62 @@ const AdminDashboard = () => {
           </div>
         </div>
       </main>
+
+      {/* Training Modal */}
+      {showTrainingModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
+              Train ML Model
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Select Seller
+                </label>
+                <select 
+                  id="seller-select"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                >
+                  <option value="1">Seller 1</option>
+                  <option value="2">Seller 2</option>
+                  <option value="3">Seller 3</option>
+                </select>
+              </div>
+              
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    const sellerId = document.getElementById('seller-select').value;
+                    setShowTrainingModal(false);
+                    handleTrainAllProducts(sellerId, false);
+                  }}
+                  className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                >
+                  Quick Train
+                </button>
+                <button
+                  onClick={() => {
+                    const sellerId = document.getElementById('seller-select').value;
+                    setShowTrainingModal(false);
+                    handleTrainAllProducts(sellerId, true);
+                  }}
+                  className="flex-1 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
+                >
+                  Fine-tune
+                </button>
+              </div>
+              
+              <button
+                onClick={() => setShowTrainingModal(false)}
+                className="w-full py-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

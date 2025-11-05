@@ -35,14 +35,19 @@ training_status = {}
 # Don't run training on startup - wait for API call
 
 @app.post("/train")
-async def train_model(seller_id: str, background_tasks: BackgroundTasks):
+async def train_model(seller_id: str, background_tasks: BackgroundTasks, fine_tune: bool = False):
     """Train model for all products from backend API"""
     try:
         # Use seller_X format for consistency
         seller_key = f"seller_{seller_id}"
         training_status[seller_key] = {"status": "training", "progress": 0, "message": "Starting training..."}
-        background_tasks.add_task(run_training_pipeline, seller_key)
-        return {"status": "training_started", "seller_id": seller_id}
+        
+        if fine_tune:
+            background_tasks.add_task(run_fine_tuning_pipeline, seller_key)
+        else:
+            background_tasks.add_task(run_training_pipeline, seller_key)
+            
+        return {"status": "training_started", "seller_id": seller_id, "seller_key": seller_key, "fine_tune": fine_tune}
     except Exception as e:
         seller_key = f"seller_{seller_id}"
         training_status[seller_key] = {"status": "error", "message": str(e)}
@@ -53,12 +58,47 @@ async def run_training_pipeline(seller_key: str):
     try:
         training_status[seller_key] = {"status": "training", "progress": 20, "message": "Fetching products from API..."}
         
-        # Train all sellers from API
-        results = await trainer_service.train_all_sellers()
+        # Organize dataset first
+        if not trainer_service.organize_dataset_from_api():
+            raise ValueError("Failed to organize dataset from API")
+        
+        training_status[seller_key] = {"status": "training", "progress": 50, "message": "Training model..."}
+        
+        # Train specific seller
+        result = await trainer_service.train_seller_model(seller_key)
         
         training_status[seller_key] = {"status": "completed", "progress": 100, 
-                                    "message": f"Training completed for all sellers: {list(results.keys())}"}
+                                    "message": f"Training completed: {result['total_embeddings']} embeddings"}
     except Exception as e:
+        logger.error(f"Training error for {seller_key}: {e}")
+        training_status[seller_key] = {"status": "error", "progress": 0, "message": str(e)}
+
+async def run_fine_tuning_pipeline(seller_key: str):
+    """Run fine-tuning pipeline"""
+    try:
+        from services.fine_tuner import FineTuner
+        
+        training_status[seller_key] = {"status": "training", "progress": 10, "message": "Preparing fine-tuning..."}
+        
+        # Organize dataset first
+        if not trainer_service.organize_dataset_from_api():
+            raise ValueError("Failed to organize dataset from API")
+        
+        training_status[seller_key] = {"status": "training", "progress": 30, "message": "Fine-tuning CLIP model..."}
+        
+        # Fine-tune model
+        fine_tuner = FineTuner(config)
+        model_path = fine_tuner.fine_tune_seller_model(seller_key, epochs=5)
+        
+        training_status[seller_key] = {"status": "training", "progress": 80, "message": "Building optimized embeddings..."}
+        
+        # Train with fine-tuned model
+        result = await trainer_service.train_seller_model(seller_key)
+        
+        training_status[seller_key] = {"status": "completed", "progress": 100, 
+                                    "message": f"Fine-tuning completed: {result['total_embeddings']} embeddings"}
+    except Exception as e:
+        logger.error(f"Fine-tuning error for {seller_key}: {e}")
         training_status[seller_key] = {"status": "error", "progress": 0, "message": str(e)}
 
 @app.post("/predict")
@@ -153,7 +193,7 @@ async def get_model_info():
     return {
         "loaded_sellers": faiss_index.get_loaded_sellers(),
         "total_vectors": {seller: idx.ntotal for seller, idx in faiss_index.seller_indices.items()},
-        "yolo_model": "yolov8n",
+        "yolo_model": "yolo11n",
         "clip_model": "openai/clip-vit-base-patch32",
         "status": "active"
     }

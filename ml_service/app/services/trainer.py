@@ -151,30 +151,27 @@ class TrainerService:
                             if response.status_code == 200:
                                 image_data = response.content
                                 
-                                # Crop objects using YOLO
-                                cropped_objects = self.crop_objects_from_image(image_data)
+                                # Always save original image for training
+                                filename = f"image_{i+1}.jpg"
+                                filepath = images_dir / filename
                                 
-                                if cropped_objects:
-                                    # Save each cropped object
-                                    for j, cropped_data in enumerate(cropped_objects):
-                                        filename = f"image_{i+1}_crop_{j+1}.jpg"
-                                        filepath = images_dir / filename
-                                        
-                                        with open(filepath, 'wb') as f:
-                                            f.write(cropped_data)
-                                        
-                                        total_images += 1
-                                        logger.info(f"Saved cropped: {seller_id}/{product['name']}/{filename}")
-                                else:
-                                    # Save original if no crops
-                                    filename = f"image_{i+1}.jpg"
-                                    filepath = images_dir / filename
+                                with open(filepath, 'wb') as f:
+                                    f.write(image_data)
+                                
+                                total_images += 1
+                                logger.info(f"Saved: {seller_id}/{product['name']}/{filename}")
+                                
+                                # Also try to crop objects using YOLO for additional training data
+                                cropped_objects = self.crop_objects_from_image(image_data)
+                                for j, cropped_data in enumerate(cropped_objects):
+                                    crop_filename = f"image_{i+1}_crop_{j+1}.jpg"
+                                    crop_filepath = images_dir / crop_filename
                                     
-                                    with open(filepath, 'wb') as f:
-                                        f.write(image_data)
+                                    with open(crop_filepath, 'wb') as f:
+                                        f.write(cropped_data)
                                     
                                     total_images += 1
-                                    logger.info(f"Saved original: {seller_id}/{product['name']}/{filename}")
+                                    logger.info(f"Saved crop: {seller_id}/{product['name']}/{crop_filename}")
                         
                         except Exception as e:
                             logger.error(f"Error processing image {image_url}: {e}")
@@ -206,16 +203,14 @@ class TrainerService:
     
     async def train_seller_model(self, seller_id: str):
         """Train model for seller using product_id structure"""
-        from main import training_status
-        
         seller_path = self.config.DATASETS_DIR / seller_id
         if not seller_path.exists():
             raise ValueError(f"Seller dataset not found: {seller_id}")
         
-        training_status[seller_id] = {"status": "training", "progress": 20, "message": "Processing images..."}
-        
         embeddings = []
         product_metadata = []
+        
+        logger.info(f"Training {seller_id}...")
         
         # Process each product folder
         for product_dir in seller_path.iterdir():
@@ -231,11 +226,14 @@ class TrainerService:
                 with open(metadata_file, 'r') as f:
                     metadata = json.load(f)
                 product_name = metadata.get("product_name", product_id)
+                price = metadata.get("price", 0.0)
             else:
                 product_name = product_id
+                price = 0.0
             
             # Process images
             if images_dir.exists():
+                image_count = 0
                 for img_file in images_dir.glob("*.jpg"):
                     try:
                         image = Image.open(img_file).convert('RGB')
@@ -244,20 +242,24 @@ class TrainerService:
                         product_metadata.append({
                             "product_id": product_id,
                             "product_name": product_name,
-                            "price": metadata.get("price", 0.0)
+                            "price": price
                         })
+                        image_count += 1
+                        logger.info(f"Processed {img_file.name} for {product_name}")
                     except Exception as e:
                         logger.error(f"Error processing {img_file}: {e}")
+                
+                logger.info(f"Product {product_name}: {image_count} images processed")
         
         if not embeddings:
-            raise ValueError("No valid images found for training")
+            raise ValueError(f"No valid images found for training {seller_id}")
         
-        # Save FAISS index
-        from main import training_status
-        training_status[seller_id] = {"status": "training", "progress": 80, "message": "Building FAISS index..."}
+        logger.info(f"Building FAISS index for {seller_id} with {len(embeddings)} embeddings...")
         
         embeddings_array = np.array(embeddings)
         self.faiss_index.save_seller_index(seller_id, embeddings_array, product_metadata)
+        
+        logger.info(f"Training completed for {seller_id}")
         
         return {
             "seller_id": seller_id,

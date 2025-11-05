@@ -10,3 +10,5 @@ pillow
 numpy
 python-multipart
 requests
+accelerate
+datasets
