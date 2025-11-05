@@ -3,8 +3,6 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import websocketService from '../services/websocket';
 import webrtcService from '../services/webrtc';
-import sfuService from '../services/sfu';
-import webrtcDirectService from '../services/webrtc_direct';
 import { Tv, Search, ShoppingCart, Bell, User, Volume2, VolumeX, Maximize, Minimize, Heart, ThumbsUp, Flame, PartyPopper, Send } from 'lucide-react';
 
 const LiveStreamViewer = () => {
@@ -230,8 +228,6 @@ const LiveStreamViewer = () => {
       
       try {
         webrtcService.destroy();
-        webrtcDirectService.disconnect();
-        sfuService.disconnect();
         websocketService.disconnect();
       } catch (error) {
       }

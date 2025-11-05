@@ -3,8 +3,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { productAPI, streamAPI, pinAPI } from '../services/api';
 import websocketService from '../services/websocket';
 import webrtcService from '../services/webrtc';
-import sfuService from '../services/sfu';
-import webrtcDirectService from '../services/webrtc_direct';
 import { LayoutDashboard, Package, Tv, FileText, TrendingUp, Settings, LogOut, Video, Eye, Plus, Pin, Send, RotateCcw } from 'lucide-react';
 
 const LiveStreamSeller = () => {
