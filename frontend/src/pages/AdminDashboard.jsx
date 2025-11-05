@@ -18,7 +18,6 @@ const AdminDashboard = () => {
       const response = await productAPI.getAll();
       setProducts(response.data);
     } catch (error) {
-      console.error('Error loading products:', error);
     } finally {
       setLoading(false);
     }
@@ -30,7 +29,6 @@ const AdminDashboard = () => {
         await productAPI.delete(productId);
         setProducts(products.filter(p => p.id !== productId));
       } catch (error) {
-        console.error('Error deleting product:', error);
         alert('Failed to delete product');
       }
     }
@@ -41,7 +39,6 @@ const AdminDashboard = () => {
       await productAPI.train(productId);
       alert(`Model training started for seller ${sellerId}`);
     } catch (error) {
-      console.error('Error training model:', error);
       alert('Failed to start training');
     }
   };
@@ -69,7 +66,6 @@ const AdminDashboard = () => {
       pollTrainingProgress(sellerIds);
       
     } catch (error) {
-      console.error('Error training models:', error);
       alert('Failed to start training');
       setIsTraining(false);
     }
@@ -103,7 +99,6 @@ const AdminDashboard = () => {
           alert('Training completed!');
         }
       } catch (error) {
-        console.error('Error polling training status:', error);
       }
     }, 2000);
   };

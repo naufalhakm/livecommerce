@@ -38,7 +38,6 @@ const UploadProductForm = ({ onProductCreated }) => {
         image: null
       });
     } catch (error) {
-      console.error('Error creating product:', error);
       alert('Failed to create product');
     } finally {
       setLoading(false);

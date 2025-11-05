@@ -48,7 +48,6 @@ const CreateProduct = () => {
       await productAPI.createWithFile(formDataToSend);
       navigate('/admin');
     } catch (error) {
-      console.error('Error creating product:', error);
       alert('Failed to create product');
     } finally {
       setLoading(false);

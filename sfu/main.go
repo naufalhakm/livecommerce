@@ -49,7 +49,6 @@ var sfu = &SFU{
 func main() {
 	http.HandleFunc("/ws", handleWebSocket)
 	http.HandleFunc("/", handleWebSocket) // Handle root path for nginx proxy
-	log.Println("SFU Server starting on :8188")
 	log.Fatal(http.ListenAndServe(":8188", nil))
 }
 
@@ -61,7 +60,6 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("WebSocket upgrade error: %v", err)
 		return
 	}
 	defer conn.Close()
@@ -89,13 +87,11 @@ func handleJoin(conn *websocket.Conn, msg Message) {
 	clientID := data["client_id"].(string)
 	role := data["role"].(string)
 
-	log.Printf("Client %s (%s) joining room %s at %v", clientID, role, roomID, time.Now())
 	
 	// Log room stats
 	sfu.mutex.RLock()
 	if existingRoom, exists := sfu.rooms[roomID]; exists {
 		existingRoom.mutex.RLock()
-		log.Printf("Room %s has %d existing clients", roomID, len(existingRoom.clients))
 		existingRoom.mutex.RUnlock()
 	}
 	sfu.mutex.RUnlock()
@@ -130,7 +126,6 @@ func handleJoin(conn *websocket.Conn, msg Message) {
 
 	pc, err := webrtc.NewPeerConnection(config)
 	if err != nil {
-		log.Printf("Failed to create peer connection: %v", err)
 		return
 	}
 
@@ -158,7 +153,6 @@ func handleJoin(conn *websocket.Conn, msg Message) {
 						ClientID: clientID,
 					}
 					if err := otherClient.conn.WriteJSON(response); err != nil {
-						log.Printf("Error sending ICE candidate to %s: %v", otherClient.id, err)
 					}
 				}
 			}
@@ -168,12 +162,10 @@ func handleJoin(conn *websocket.Conn, msg Message) {
 
 	if role == "publisher" {
 		pc.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
-			log.Printf("Publisher track received: %s", track.Kind())
 
 			// Create local track for forwarding
 			localTrack, err := webrtc.NewTrackLocalStaticRTP(track.Codec().RTPCodecCapability, track.ID(), track.StreamID())
 			if err != nil {
-				log.Printf("Error creating local track: %v", err)
 				return
 			}
 
@@ -184,20 +176,16 @@ func handleJoin(conn *websocket.Conn, msg Message) {
 			for _, otherClient := range room.clients {
 				if otherClient.role == "viewer" && otherClient.id != clientID {
 					if _, err := otherClient.pc.AddTrack(localTrack); err != nil {
-						log.Printf("Error adding track to viewer %s: %v", otherClient.id, err)
 					} else {
-						log.Printf("Track added to viewer %s, triggering renegotiation", otherClient.id)
 						
 						// Create new offer for viewer
 						go func(viewerClient *Client) {
 							offer, err := viewerClient.pc.CreateOffer(nil)
 							if err != nil {
-								log.Printf("Error creating offer for viewer %s: %v", viewerClient.id, err)
 								return
 							}
 							
 							if err := viewerClient.pc.SetLocalDescription(offer); err != nil {
-								log.Printf("Error setting local description for viewer %s: %v", viewerClient.id, err)
 								return
 							}
 							
@@ -235,9 +223,7 @@ func handleJoin(conn *websocket.Conn, msg Message) {
 			if otherClient.role == "publisher" {
 				for _, track := range otherClient.localTracks {
 					if _, err := pc.AddTrack(track); err != nil {
-						log.Printf("Error adding existing track to viewer %s: %v", clientID, err)
 					} else {
-						log.Printf("Existing track added to viewer %s", clientID)
 					}
 				}
 			}
@@ -253,7 +239,6 @@ func handleJoin(conn *websocket.Conn, msg Message) {
 		ClientID: clientID,
 	}
 	if err := conn.WriteJSON(response); err != nil {
-		log.Printf("Error sending joined response: %v", err)
 	}
 }
 
@@ -302,18 +287,15 @@ func handleOffer(conn *websocket.Conn, msg Message) {
 	}
 
 	if err := client.pc.SetRemoteDescription(offer); err != nil {
-		log.Printf("Error setting remote description: %v", err)
 		return
 	}
 
 	answer, err := client.pc.CreateAnswer(nil)
 	if err != nil {
-		log.Printf("Error creating answer: %v", err)
 		return
 	}
 
 	if err := client.pc.SetLocalDescription(answer); err != nil {
-		log.Printf("Error setting local description: %v", err)
 		return
 	}
 
@@ -324,7 +306,6 @@ func handleOffer(conn *websocket.Conn, msg Message) {
 		ClientID: clientID,
 	}
 	if err := conn.WriteJSON(response); err != nil {
-		log.Printf("Error sending answer: %v", err)
 	}
 }
 

@@ -11,7 +11,7 @@ const LiveStreamViewer = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [sellerId, setSellerId] = useState(searchParams.get('seller') || '');
-  const [hasJoined, setHasJoined] = useState(false);
+  const [hasJoined, setHasJoined] = useState(!!searchParams.get('seller'));
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [pinnedProduct, setPinnedProduct] = useState(null);
@@ -25,12 +25,226 @@ const LiveStreamViewer = () => {
   const videoRef = useRef(null);
   const videoContainerRef = useRef(null);
   const initialized = useRef(false);
+  const [connectionStatus, setConnectionStatus] = useState('disconnected');
+  const [retryCount, setRetryCount] = useState(0);
+  const maxRetries = 3;
+
+  // Auto-join if seller parameter is provided in URL, otherwise redirect to streams list
+  useEffect(() => {
+    const sellerParam = searchParams.get('seller');
+    if (sellerParam && !hasJoined) {
+      setSellerId(sellerParam);
+      setHasJoined(true);
+    } else if (!sellerParam && !hasJoined) {
+      // Redirect to streams list if no seller parameter
+      navigate('/streams');
+    }
+  }, [searchParams, hasJoined, navigate]);
 
   useEffect(() => {
-    if (searchParams.get('seller')) {
-      joinStream(searchParams.get('seller'));
+    if (hasJoined && sellerId && !initialized.current) {
+      initialized.current = true;
+      
+      setupConnectionCallbacks();
+      initializeStreaming();
     }
+
+    // Cleanup on page unload
+    const handleBeforeUnload = () => {
+      cleanupConnection();
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('unload', handleBeforeUnload);
+
+    return () => {
+      cleanupConnection();
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('unload', handleBeforeUnload);
+    };
+  }, [hasJoined, sellerId]);
+
+  // Setup chat and reaction handlers
+  useEffect(() => {
+    const handleChat = (message) => {
+      setMessages(prev => [...prev, message.data]);
+    };
+
+    const handleReaction = (message) => {
+      const newReaction = {
+        id: Date.now() + Math.random(),
+        emoji: message.data.emoji,
+        x: Math.random() * 80 + 10,
+      };
+      setReactions(prev => [...prev, newReaction]);
+      
+      setTimeout(() => {
+        setReactions(prev => prev.filter(r => r.id !== newReaction.id));
+      }, 3000);
+    };
+
+    const handleSellerOffline = (message) => {
+      setStreamEnded(true);
+      setIsPlaying(false);
+    };
+
+    websocketService.on('chat', handleChat);
+    websocketService.on('reaction', handleReaction);
+    websocketService.on('seller_offline', handleSellerOffline);
+
+    return () => {
+      websocketService.off('chat', handleChat);
+      websocketService.off('reaction', handleReaction);
+      websocketService.off('seller_offline', handleSellerOffline);
+    };
   }, []);
+
+
+  const setupConnectionCallbacks = () => {
+    // Enhanced WebSocket connection management
+    websocketService.setConnectionCallbacks({
+      onConnected: () => {
+        setConnectionStatus('connected');
+        setRetryCount(0);
+      },
+      onDisconnected: (event) => {
+        setConnectionStatus('disconnected');
+        
+        if (retryCount < maxRetries) {
+          setRetryCount(prev => prev + 1);
+          setTimeout(() => {
+            if (hasJoined && sellerId) {
+              initializeStreaming();
+            }
+          }, 2000 * retryCount);
+        }
+      },
+      onError: (error) => {
+        setConnectionStatus('error');
+      }
+    });
+  };
+
+  const initializeStreaming = async () => {
+    try {
+      setConnectionStatus('connecting');
+      
+      // Setup WebRTC callbacks
+      setupWebRTCCallbacks();
+      
+      // Setup WebSocket event handlers BEFORE connecting
+      setupWebSocketHandlers();
+      
+      // Connect to seller's room
+      const viewerClientId = `viewer-${Date.now()}`;
+      websocketService.connect(viewerClientId, `seller-${sellerId}`);
+      
+    } catch (error) {
+      setConnectionStatus('error');
+    }
+  };
+
+  const setupWebRTCCallbacks = () => {
+    webrtcService.onRemoteStream = (stream) => {
+      if (!stream) {
+        return;
+      }
+      
+      handleStreamSetup(stream);
+    };
+    
+    webrtcService.onError = (error) => {
+      setConnectionStatus('error');
+    };
+  };
+
+  const setupWebSocketHandlers = () => {
+    // Setup WebRTC signaling listeners first
+    webrtcService.setupSignalingListeners();
+    
+    // Setup WebSocket event handlers
+    websocketService.on('connected', () => {
+      setConnectionStatus('connected');
+      setRetryCount(0);
+    });
+    
+    // Wait for join confirmation, then initiate WebRTC
+    websocketService.on('joined', async (message) => {
+      try {
+        
+        // Add delay to ensure WebSocket is fully ready
+        setTimeout(async () => {
+          try {
+            
+            // Join broadcast by creating offer to seller
+            const peer = await webrtcService.joinBroadcast(`seller-${sellerId}`);
+          } catch (error) {
+            setConnectionStatus('error');
+          }
+        }, 100);
+      } catch (error) {
+        setConnectionStatus('error');
+      }
+    });
+  };
+
+  const handleStreamSetup = (stream) => {
+    if (!stream || !stream.active) {
+      return;
+    }
+    
+    // Verify video track is enabled
+    const videoTrack = stream.getVideoTracks()[0];
+    if (videoTrack) {
+      // Ensure video track is enabled
+      videoTrack.enabled = true;
+    }
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.muted = true; // Audio muted for viewer
+      videoRef.current.playsInline = true;
+      
+      videoRef.current.onloadedmetadata = () => {
+        
+        // Only set playing if we have actual video content
+        if (videoRef.current.videoWidth > 0 && videoRef.current.videoHeight > 0) {
+          setIsPlaying(true);
+          setConnectionStatus('connected');
+        } else {
+        }
+        
+        videoRef.current.play().catch(e => {
+        });
+      };
+      
+      videoRef.current.onerror = (e) => {
+        setConnectionStatus('error');
+      };
+    }
+  };
+
+  const cleanupConnection = () => {
+    if (initialized.current) {
+      initialized.current = false;
+      
+      try {
+        webrtcService.destroy();
+        webrtcDirectService.disconnect();
+        sfuService.disconnect();
+        websocketService.disconnect();
+      } catch (error) {
+      }
+      
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+      
+      setIsPlaying(false);
+      setConnectionStatus('disconnected');
+    }
+  };
+
 
   const joinStream = (sellerIdToJoin) => {
     if (!sellerIdToJoin) {
@@ -42,190 +256,53 @@ const LiveStreamViewer = () => {
     navigate(`/viewer?seller=${sellerIdToJoin}`, { replace: true });
   };
 
+  // Setup additional WebSocket handlers for product and user events
   useEffect(() => {
-    if (hasJoined && sellerId && !initialized.current) {
-      initialized.current = true;
-      console.log('Initializing viewer connection...');
-      
-      // Use same streaming method as seller
-      const useDirectWebRTC = false; // Use SFU for 1-to-many
-      
-      if (useDirectWebRTC) {
-        // Direct WebRTC callbacks
-        webrtcDirectService.onRemoteStream = (stream) => {
-          console.log('🎥 VIEWER: Received stream via direct WebRTC!');
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
-            videoRef.current.onloadedmetadata = () => {
-              setIsPlaying(true);
-            };
-            videoRef.current.oncanplay = () => {
-              if (videoRef.current) {
-                videoRef.current.play().catch(e => console.error('Play error:', e));
-              }
-            };
-          }
-        };
-        
-        webrtcDirectService.onError = (error) => {
-          console.error('❌ VIEWER: Direct WebRTC error:', error);
-          setStreamEnded(true);
-        };
-      } else {
-        // SFU callbacks
-        sfuService.onRemoteStream = (stream) => {
-          if (!stream) {
-            console.warn('⚠️ VIEWER: Received undefined stream, ignoring');
-            return;
-          }
-          
-          console.log('🎥 VIEWER: Received stream from SFU!');
-          console.log('Stream details:', {
-            id: stream.id,
-            active: stream.active,
-            videoTracks: stream.getVideoTracks().length,
-            audioTracks: stream.getAudioTracks().length
-          });
-          
-          if (videoRef.current && stream.active) {
-            videoRef.current.srcObject = stream;
-            videoRef.current.muted = true;
-            
-            videoRef.current.onloadedmetadata = () => {
-              console.log('✅ VIEWER: Video metadata loaded');
-              setIsPlaying(true);
-            };
-            
-            videoRef.current.oncanplay = () => {
-              console.log('✅ VIEWER: Video can play, starting playback');
-              if (videoRef.current) {
-                videoRef.current.play().then(() => {
-                  console.log('✅ VIEWER: Video playing successfully');
-                }).catch(e => {
-                  console.error('❌ VIEWER: Play error:', e);
-                });
-              }
-            };
-            
-            setTimeout(() => {
-              if (videoRef.current && videoRef.current.readyState >= 2) {
-                console.log('🔄 VIEWER: Force playing video');
-                videoRef.current.play().catch(e => console.error('Force play error:', e));
-              }
-            }, 500);
-          }
-        };
+    if (!hasJoined) return;
+
+    websocketService.on('product_pinned', async (message) => {
+
+      // Only update pin if similarity is high enough (80% or higher)
+      if (message.data.similarity_score < 0.8) {
+        return;
       }
       
-      webrtcService.onConnect = () => {
-        console.log('✅ VIEWER: WebRTC peer connected to seller!');
-      };
-      
-      webrtcService.onError = (error) => {
-        console.error('❌ VIEWER: WebRTC error:', error);
-      };
-
-      // Connect to seller's room - use same room ID as seller
-      websocketService.connect(`viewer-${Date.now()}`, sellerId);
-      
-      // Wait for WebSocket to connect before joining WebRTC
-      const handleConnected = async () => {
-        try {
-          console.log('🔗 VIEWER: WebSocket connected, joining broadcast...');
-          
-          if (useDirectWebRTC) {
-            // Connect via direct WebRTC
-            await webrtcDirectService.connect(sellerId, 'viewer', `viewer-${Date.now()}`);
-            console.log('✅ VIEWER: Connected via direct WebRTC');
-          } else {
-            // Connect to SFU to receive seller's stream
-            await sfuService.connect(sellerId, 'viewer');
-            console.log('✅ VIEWER: Connected to SFU, waiting for seller stream...');
-          }
-        } catch (error) {
-          console.error('❌ VIEWER: Error joining broadcast:', error);
+      try {
+        // Fetch full product details from API
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/products/${message.data.product_id}`);
+        if (response.ok) {
+          const productData = await response.json();
+          setPinnedProduct({
+            ...productData,
+            similarity_score: message.data.similarity_score
+          });
+        } else {
         }
-      };
+      } catch (error) {
+      }
+    });
 
-      websocketService.on('connected', handleConnected);
+    websocketService.on('pin_product', (message) => {
+      if (message.data.product) {
+        setPinnedProduct(message.data.product);
+      }
+    });
 
-      websocketService.on('product_pinned', async (message) => {
-        console.log('Auto pinned product:', message.data);
+    websocketService.on('user_joined', (message) => {
+      setViewerCount(prev => prev + 1);
+    });
 
-        // Only update pin if similarity is high enough (80% or higher)
-        if (message.data.similarity_score < 0.8) {
-          console.log('Similarity too low, not updating pin:', message.data.similarity_score);
-          return;
-        }
-        
-        try {
-          // Fetch full product details from API
-          const response = await fetch(`${import.meta.env.VITE_API_URL}/api/products/${message.data.product_id}`);
-          if (response.ok) {
-            const productData = await response.json();
-            setPinnedProduct({
-              ...productData,
-              similarity_score: message.data.similarity_score
-            });
-            console.log('Product pinned with high similarity:', message.data.similarity_score);
-          } else {
-            console.log('Product not found in API, not updating pin');
-          }
-        } catch (error) {
-          console.error('Error fetching product details:', error);
-          console.log('API error, not updating pin');
-        }
-      });
-
-      websocketService.on('pin_product', (message) => {
-        if (message.data.product) {
-          setPinnedProduct(message.data.product);
-        }
-      });
-
-      websocketService.on('chat', (message) => {
-        setMessages(prev => [...prev, message.data]);
-      });
-
-      websocketService.on('reaction', (message) => {
-        const newReaction = {
-          id: Date.now() + Math.random(),
-          emoji: message.data.emoji,
-          x: Math.random() * 80 + 10, // Random position 10-90%
-        };
-        setReactions(prev => [...prev, newReaction]);
-        
-        // Remove reaction after animation
-        setTimeout(() => {
-          setReactions(prev => prev.filter(r => r.id !== newReaction.id));
-        }, 3000);
-      });
-
-      websocketService.on('seller_offline', (message) => {
-        console.log('Seller went offline:', message.data);
-        setStreamEnded(true);
-        setIsPlaying(false);
-      });
-
-      websocketService.on('user_joined', (message) => {
-        setViewerCount(prev => prev + 1);
-      });
-
-      websocketService.on('user_left', (message) => {
-        setViewerCount(prev => Math.max(0, prev - 1));
-      });
-    }
+    websocketService.on('user_left', (message) => {
+      setViewerCount(prev => Math.max(0, prev - 1));
+    });
 
     return () => {
-      if (initialized.current) {
-        console.log('Cleaning up viewer connection');
-        sfuService.disconnect();
-        webrtcDirectService.disconnect();
-        webrtcService.destroy();
-        websocketService.disconnect();
-      }
+      websocketService.off('product_pinned');
+      websocketService.off('pin_product');
+      websocketService.off('user_joined');
+      websocketService.off('user_left');
     };
-  }, [hasJoined, sellerId]);
+  }, [hasJoined]);
 
   const sendMessage = () => {
     if (newMessage.trim()) {
@@ -260,7 +337,6 @@ const LiveStreamViewer = () => {
         setIsFullscreen(false);
       }
     } catch (error) {
-      console.error('Fullscreen error:', error);
     }
   };
 
@@ -306,10 +382,10 @@ const LiveStreamViewer = () => {
             </button>
 
             <button
-              onClick={() => navigate('/')}
+              onClick={() => navigate('/streams')}
               className="w-full bg-gray-700 text-white font-medium py-3 rounded-lg hover:bg-gray-600 transition-colors"
             >
-              Back to Home
+              Back to Streams
             </button>
           </div>
         </div>
@@ -335,6 +411,12 @@ const LiveStreamViewer = () => {
           </div>
         </div>
         <div className="flex items-center gap-4">
+          <button 
+            onClick={() => navigate('/streams')}
+            className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm font-medium"
+          >
+            Browse Streams
+          </button>
           <button className="p-2 bg-gray-800 rounded-lg text-white hover:bg-gray-700">
             <ShoppingCart className="w-5 h-5" />
           </button>
@@ -356,11 +438,6 @@ const LiveStreamViewer = () => {
               playsInline
               muted
               className="w-full h-full object-cover"
-              style={{ display: isPlaying ? 'block' : 'none' }}
-              onLoadStart={() => console.log('Video load start')}
-              onCanPlay={() => console.log('Video can play')}
-              onPlay={() => console.log('Video playing')}
-              onError={(e) => console.error('Video error:', e)}
             />
             {!isPlaying && (
               <div className="absolute inset-0 w-full h-full bg-gray-800 flex items-center justify-center">
@@ -373,10 +450,10 @@ const LiveStreamViewer = () => {
                       <p className="text-red-400 text-lg font-semibold mb-2">Stream Ended</p>
                       <p className="text-gray-400">Seller {sellerId} has ended the livestream</p>
                       <button
-                        onClick={() => navigate('/')}
+                        onClick={() => navigate('/streams')}
                         className="mt-4 px-6 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
                       >
-                        Back to Home
+                        Browse Other Streams
                       </button>
                     </>
                   ) : (

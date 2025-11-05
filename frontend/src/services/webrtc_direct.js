@@ -21,7 +21,6 @@ class WebRTCDirectService {
       this.ws = new WebSocket(`${wsUrl}/ws/webrtc?client_id=${this.clientId}&room_id=${this.roomId}&role=${this.role}`);
       
       this.ws.onopen = () => {
-        console.log('🔗 WebRTC signaling connected');
         this.setupPeerConnection();
       };
 
@@ -31,12 +30,10 @@ class WebRTCDirectService {
       };
 
       this.ws.onerror = (error) => {
-        console.error('❌ WebRTC signaling error:', error);
         if (this.onError) this.onError(error);
       };
 
     } catch (error) {
-      console.error('❌ WebRTC connection error:', error);
       if (this.onError) this.onError(error);
     }
   }
@@ -59,14 +56,12 @@ class WebRTCDirectService {
     };
 
     this.pc.ontrack = (event) => {
-      console.log('🎥 Remote stream received');
       if (this.onRemoteStream) {
         this.onRemoteStream(event.streams[0]);
       }
     };
 
     this.pc.onconnectionstatechange = () => {
-      console.log('WebRTC connection state:', this.pc.connectionState);
       if (this.pc.connectionState === 'connected' && this.onConnect) {
         this.onConnect();
       }
@@ -98,7 +93,6 @@ class WebRTCDirectService {
         data: offer
       });
     } catch (error) {
-      console.error('Error creating offer:', error);
     }
   }
 
@@ -136,7 +130,6 @@ class WebRTCDirectService {
           break;
       }
     } catch (error) {
-      console.error('Error handling signaling message:', error);
     }
   }
 
@@ -165,7 +158,6 @@ class WebRTCDirectService {
       this.ws = null;
     }
     this.localStream = null;
-    console.log('🔌 WebRTC Direct: Disconnected');
   }
 }
 

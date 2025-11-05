@@ -9,6 +9,7 @@ const api = axios.create({
 export const productAPI = {
   getAll: () => api.get('/products'),
   getById: (id) => api.get(`/products/${id}`),
+  getBySellerId: (sellerId) => api.get(`/products/seller/${sellerId}`),
   create: (product) => api.post('/products', product),
   createWithFile: (formData) => {
     return axios.post(`${API_BASE_URL}/api/products`, formData, {

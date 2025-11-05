@@ -7,6 +7,9 @@ class WebRTCService {
     this.remoteStream = null;
     this.signalListenersSetup = false;
     this.SimplePeer = null;
+    this.connectionState = 'disconnected';
+    this.statsInterval = null;
+    this.iceProcessingEnabled = true; // Added class-level property
   }
 
   async loadSimplePeer() {
@@ -14,15 +17,40 @@ class WebRTCService {
       if (window.SimplePeer) {
         this.SimplePeer = window.SimplePeer;
       } else {
-        throw new Error('SimplePeer not loaded from CDN');
+        await this.loadSimplePeerFromCDN();
       }
     }
     return this.SimplePeer;
   }
 
+  async loadSimplePeerFromCDN() {
+    return new Promise((resolve, reject) => {
+      if (window.SimplePeer) {
+        this.SimplePeer = window.SimplePeer;
+        resolve(this.SimplePeer);
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/simple-peer@9.11.1/simplepeer.min.js';
+      script.onload = () => {
+        this.SimplePeer = window.SimplePeer;
+        resolve(this.SimplePeer);
+      };
+      script.onerror = () => {
+        reject(new Error('Failed to load SimplePeer from CDN'));
+      };
+      document.head.appendChild(script);
+    });
+  }
+
   async initializeCamera(facingMode = 'user') {
     try {
-      this.localStream = await navigator.mediaDevices.getUserMedia({
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Camera access not supported in this browser');
+      }
+
+      const constraints = {
         video: { 
           width: { ideal: 1280, max: 1280 }, 
           height: { ideal: 720, max: 720 },
@@ -32,50 +60,70 @@ class WebRTCService {
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          sampleRate: 44100
+          sampleRate: 44100,
+          channelCount: 1
         }
+      };
+
+      this.localStream = await navigator.mediaDevices.getUserMedia(constraints);
+
+      this.localStream.getTracks().forEach(track => {
+        track.applyConstraints(constraints);
       });
-      console.log('🎥 Camera stream initialized:', this.localStream.getTracks().length, 'tracks');
+
       return this.localStream;
     } catch (error) {
-      console.error('Error accessing camera:', error);
-      throw error;
+      
+      if (error.name === 'NotAllowedError') {
+        throw new Error('Camera permission denied. Please allow camera access and try again.');
+      } else if (error.name === 'NotFoundError') {
+        throw new Error('No camera found. Please check your device has a camera.');
+      } else if (error.name === 'NotReadableError') {
+        throw new Error('Camera is already in use by another application.');
+      } else {
+        throw error;
+      }
     }
   }
   
   async initializeScreenShare() {
     try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+        throw new Error('Screen sharing not supported in this browser');
+      }
+
       this.localStream = await navigator.mediaDevices.getDisplayMedia({
-        video: { mediaSource: 'screen' },
-        audio: true
+        video: { 
+          cursor: 'always',
+          displaySurface: 'window'
+        },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true
+        }
       });
-      console.log('🖥️ Screen share initialized:', this.localStream.getTracks().length, 'tracks');
+
+      this.localStream.getVideoTracks()[0].addEventListener('ended', () => {
+        this.emitScreenShareEnded();
+      });
+
       return this.localStream;
     } catch (error) {
-      console.error('Error accessing screen share:', error);
       throw error;
     }
   }
 
+  emitScreenShareEnded() {
+    if (this.onScreenShareEnded) {
+      this.onScreenShareEnded();
+    }
+  }
+
   async createPeer(isInitiator = false, targetClientId = null) {
-    console.log('🔧 Creating peer - initiator:', isInitiator, 'target:', targetClientId);
-    console.log('Has local stream:', !!this.localStream);
     
-    // Generate unique peer ID to avoid conflicts
     const peerId = targetClientId || `peer-${Date.now()}`;
     
-    // Always clean up existing peer to avoid state conflicts
-    if (this.peers.has(peerId)) {
-      console.log('🧹 Cleaning up existing peer for:', peerId);
-      const existingPeer = this.peers.get(peerId);
-      existingPeer.destroy();
-      this.peers.delete(peerId);
-    }
-
-    if (!this.localStream && !isInitiator) {
-      console.error('No local stream available for seller to send!');
-      return null;
-    }
+    await this.cleanupPeer(peerId);
 
     const SimplePeer = await this.loadSimplePeer();
 
@@ -85,215 +133,331 @@ class WebRTCService {
       config: {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:stun3.l.google.com:19302' }
         ]
-      }
+      },
+      iceTransportPolicy: 'all',
+      reconnectTimer: 1000,
     };
     
-    // Viewer should expect to receive streams
     if (isInitiator) {
       peerConfig.offerOptions = {
         offerToReceiveAudio: true,
         offerToReceiveVideo: true
       };
-      console.log('Viewer configured to receive audio/video');
     }
 
     if (this.localStream && !isInitiator) {
-      // Only seller (non-initiator) sends stream
       peerConfig.stream = this.localStream;
-      console.log('Seller adding local stream to peer config:', this.localStream.getTracks().length, 'tracks');
-    } else if (!isInitiator) {
-      console.error('Seller has no local stream to send!');
-    } else {
-      console.log('Viewer peer - no local stream needed');
+    } else if (this.localStream && isInitiator) {
+      // Viewer should not send stream, only receive
     }
+
 
     let peer;
     try {
       peer = new SimplePeer(peerConfig);
     } catch (error) {
-      console.error('Error creating peer:', error);
       throw error;
     }
 
-    if (peerId) {
-      this.peers.set(peerId, peer);
+    this.peers.set(peerId, peer);
+    
+    this.setupPeerHandlers(peer, peerId, isInitiator);
+    
+    return peer;
+  }
+
+  async cleanupPeer(peerId) {
+    if (this.peers.has(peerId)) {
+      const existingPeer = this.peers.get(peerId);
+      try {
+        existingPeer.destroy();
+      } catch (error) {
+      }
+      this.peers.delete(peerId);
     }
+  }
+
+  setupPeerHandlers(peer, peerId, isInitiator) {
+    let offerSent = false;
+    let answerSent = false;
+    let stateInterval;
+    let connectionHealthy = false;
+    let iceErrorCount = 0;
+    const maxIceErrors = 5;
 
     peer.on('signal', (data) => {
-      console.log('📡 Sending signal:', data.type, 'to:', targetClientId);
-      if (data.type === 'offer') {
-        console.log('📤 VIEWER: Sending offer to seller');
-        websocketService.sendOffer(data, targetClientId);
-      } else if (data.type === 'answer') {
-        console.log('📤 SELLER: Sending answer to viewer');
-        websocketService.sendAnswer(data, targetClientId);
-      } else if (data.candidate) {
-        console.log('📤 Sending ICE candidate');
-        websocketService.sendIceCandidate(data, targetClientId);
+      if (data.type === 'offer' && !offerSent) {
+        offerSent = true;
+        websocketService.send({
+          type: 'webrtc_offer',
+          data: {
+            type: 'offer',
+            sdp: data.sdp
+          },
+          from: websocketService.clientId,
+          to: peerId
+        });
+      } else if (data.type === 'answer' && !answerSent) {
+        answerSent = true;
+        websocketService.send({
+          type: 'webrtc_answer',
+          data: {
+            type: 'answer',
+            sdp: data.sdp
+          },
+          from: websocketService.clientId,
+          to: peerId
+        });
+      } else if (data.candidate && !connectionHealthy) {
+        websocketService.send({
+          type: 'webrtc_ice_candidate',
+          data: {
+            candidate: data.candidate,
+            sdpMLineIndex: data.sdpMLineIndex || 0,
+            sdpMid: data.sdpMid
+          },
+          from: websocketService.clientId,
+          to: peerId
+        });
       }
     });
 
     peer.on('stream', (stream) => {
-      console.log('🎥 Stream received on peer:', peerId);
-      console.log('Stream details:', {
-        id: stream.id,
-        active: stream.active,
-        videoTracks: stream.getVideoTracks().length,
-        audioTracks: stream.getAudioTracks().length
-      });
       this.remoteStream = stream;
+      this.connectionState = 'connected';
+      connectionHealthy = true;
+      iceErrorCount = 0;
+      
+      // Stop ICE candidate processing
+      this.iceProcessingEnabled = false;
+      
       if (this.onRemoteStream) {
-        console.log('✅ Calling onRemoteStream callback');
         this.onRemoteStream(stream);
-      } else {
-        console.warn('❌ No onRemoteStream callback set');
       }
     });
 
     peer.on('connect', () => {
-      console.log('✅ WebRTC connection established with:', peerId);
-      console.log('📊 Total active connections:', this.peers.size);
+      this.connectionState = 'connected';
+      connectionHealthy = true;
+      
+      // Disable ICE candidate processing once connected
+      this.iceProcessingEnabled = false;
+      
       if (this.onConnect) {
-        this.onConnect();
+        this.onConnect(peerId);
       }
     });
 
     peer.on('error', (error) => {
-      console.error('WebRTC error with', peerId, ':', error);
-      // Clean up failed peer
-      this.peers.delete(peerId);
+      
+      const errorStr = error.toString();
+      
+      // ICE candidate errors are usually non-fatal
+      if (errorStr.includes('RTCIceCandidate') || errorStr.includes('ICE candidate')) {
+        iceErrorCount++;
+        
+        // Only treat as fatal if we get too many ICE errors without a working stream
+        if (iceErrorCount >= maxIceErrors && !connectionHealthy) {
+          this.connectionState = 'error';
+          this.cleanupPeer(peerId);
+          if (this.onError) {
+            this.onError(error, peerId);
+          }
+        } else {
+          // Non-fatal ICE error
+          this.connectionState = connectionHealthy ? 'connected' : 'connecting';
+        }
+        return;
+      }
+      
+      // Actual fatal error
+      this.connectionState = 'error';
+      this.cleanupPeer(peerId);
+      
       if (this.onError) {
-        this.onError(error);
+        this.onError(error, peerId);
       }
     });
 
     peer.on('close', () => {
-      console.log('🔴 Peer closed:', peerId);
-      this.peers.delete(peerId);
-      console.log('📊 Remaining connections:', this.peers.size);
+    
+      // Check if we should attempt reconnection
+      if (this.remoteStream && this.remoteStream.active) {
+          this.connectionState = 'disconnected';
+          
+          // Don't cleanup immediately for temporary disconnections
+          // The stream might still be working
+          setTimeout(() => {
+              // Only cleanup if the peer is truly dead and stream is gone
+              if (peer.destroyed && (!this.remoteStream || !this.remoteStream.active)) {
+                  if (stateInterval) clearInterval(stateInterval);
+                  this.cleanupPeer(peerId);
+                  
+                  if (this.onClose) {
+                      this.onClose(peerId);
+                  }
+              } else {
+              }
+          }, 15000); // Wait 15 seconds for potential recovery
+      } else {
+          // No active stream, cleanup immediately
+          this.connectionState = 'disconnected';
+          if (stateInterval) clearInterval(stateInterval);
+          this.cleanupPeer(peerId);
+          
+          if (this.onClose) {
+              this.onClose(peerId);
+          }
+      }
     });
 
-    // Signaling listeners are set up globally, not per peer
-    return peer;
+    // Debug connection state monitoring
+    stateInterval = setInterval(() => {
+      if (peer.destroyed) {
+        clearInterval(stateInterval);
+        return;
+      }
+    }, 5000);
+
+    peer.on('iceStateChange', (state) => {
+    });
   }
 
   setupSignalingListeners() {
-    console.log('🔧 Setting up WebRTC signaling listeners');
+    if (this.signalListenersSetup) {
+      return;
+    }
+
+
     websocketService.on('webrtc_offer', async (message) => {
-      console.log('🔥 SELLER: Received offer from viewer:', message.from);
-      console.log('Current peers:', Array.from(this.peers.keys()));
-      console.log('Has local stream:', !!this.localStream);
-      console.log('Local stream tracks:', this.localStream?.getTracks().length || 0);
-      console.log('Local stream active:', this.localStream?.active);
       
       if (!this.localStream) {
-        console.error('❌ SELLER: No local stream to send to viewer!');
-        console.log('🔍 SELLER: Checking if stream exists in video element...');
-        
-        // Try to get stream from video element as fallback
-        const videoElement = document.querySelector('video');
-        console.log('🔍 SELLER: Video element found:', !!videoElement);
-        console.log('🔍 SELLER: Video srcObject:', !!videoElement?.srcObject);
-        
-        if (videoElement && videoElement.srcObject) {
-          console.log('✅ SELLER: Found stream in video element, using as fallback');
-          this.localStream = videoElement.srcObject;
-          console.log('✅ SELLER: Stream tracks from video:', this.localStream.getTracks().length);
-        } else {
-          console.error('❌ SELLER: No stream found anywhere, cannot proceed');
-          return;
-        }
+        return;
       }
       
-      // Always clean up existing peer to avoid state conflicts
-      if (this.peers.has(message.from)) {
-        const existingPeer = this.peers.get(message.from);
-        console.log('🧹 SELLER: Cleaning up existing peer for:', message.from);
-        existingPeer.destroy();
-        this.peers.delete(message.from);
-      }
-      
-      console.log('📊 SELLER: Current active peers:', this.peers.size);
       
       try {
-        // Seller responds to viewer's offer (seller is not initiator)
         const peer = await this.createPeer(false, message.from);
-        console.log('✅ SELLER: Created peer for viewer:', message.from);
+        
         if (peer && !peer.destroyed) {
-          console.log('✅ SELLER: Signaling offer to peer...');
-          peer.signal(message.data);
-          console.log('✅ SELLER: Offer signaled, peer will generate answer');
+          const offerData = {
+            type: 'offer',
+            sdp: message.data.sdp
+          };
+          peer.signal(offerData);
+        } else {
         }
       } catch (error) {
-        console.error('❌ SELLER: Error handling offer:', error);
       }
     });
 
     websocketService.on('webrtc_answer', (message) => {
-      console.log('🔥 VIEWER: Received answer from seller:', message.from);
       const peer = this.peers.get(message.from);
+      
       if (peer && !peer.destroyed) {
         try {
-          // Check peer state before signaling answer
-          if (peer._pc && peer._pc.signalingState === 'have-local-offer') {
-            console.log('✅ VIEWER: Peer in correct state, signaling answer');
-            peer.signal(message.data);
-            console.log('✅ VIEWER: Answer signaled, connection should establish');
-          } else {
-            console.warn('⚠️ VIEWER: Peer not in correct state:', peer._pc?.signalingState);
-            // Recreate peer if in wrong state
-            this.peers.delete(message.from);
+          const answerData = message.data;
+          
+          if (answerData && answerData.sdp && !answerData.type) {
+            answerData.type = 'answer';
           }
+          
+          peer.signal(answerData);
         } catch (error) {
-          console.error('❌ VIEWER: Error signaling answer:', error);
-          this.peers.delete(message.from);
+          this.cleanupPeer(message.from);
         }
       } else {
-        console.error('❌ VIEWER: No peer found for answer from:', message.from);
       }
     });
 
     websocketService.on('webrtc_ice_candidate', (message) => {
-      console.log('Received ICE candidate from:', message.from);
+      if (!this.iceProcessingEnabled) {
+        return;
+      }
+      
       const peer = this.peers.get(message.from);
-      if (peer) {
-        peer.signal(message.data);
+      
+      if (peer && !peer.destroyed && !peer.connected) {
+          try {
+              const candidateData = message.data;
+              if (candidateData && candidateData.candidate) {
+                  // Ensure proper format for SimplePeer
+                  const formattedCandidate = {
+                      candidate: candidateData.candidate,
+                      sdpMLineIndex: candidateData.sdpMLineIndex,
+                      sdpMid: candidateData.sdpMid
+                  };
+                  peer.signal(formattedCandidate);
+              }
+          } catch (error) {
+          }
       }
     });
+
+    this.signalListenersSetup = true;
   }
 
   async startBroadcast() {
-    return await this.createPeer(true);
+    return null;
   }
 
   async joinBroadcast(sellerClientId) {
-    console.log('Joining broadcast for seller:', sellerClientId);
-    // Viewer initiates connection to seller
-    const peer = await this.createPeer(true, sellerClientId);
-    console.log('Viewer peer created:', peer);
-    return peer;
+    
+    try {
+      const peer = await this.createPeer(true, sellerClientId);
+      
+      return peer;
+    } catch (error) {
+      throw error;
+    }
   }
 
   destroy() {
+    
+    if (this.statsInterval) {
+      clearInterval(this.statsInterval);
+    }
+
     this.peers.forEach((peer, clientId) => {
-      console.log('Destroying peer for:', clientId);
-      peer.destroy();
+      try {
+        peer.destroy();
+      } catch (error) {
+      }
     });
     this.peers.clear();
     
     if (this.localStream) {
-      this.localStream.getTracks().forEach(track => track.stop());
+      this.localStream.getTracks().forEach(track => {
+        track.stop();
+      });
       this.localStream = null;
     }
     
     this.remoteStream = null;
+    this.connectionState = 'disconnected';
+    this.signalListenersSetup = false;
+    this.iceProcessingEnabled = true; // Reset for next connection
+    
   }
 
+  getConnectionState() {
+    return this.connectionState;
+  }
+
+  getActiveConnections() {
+    return this.peers.size;
+  }
+
+  // Event callbacks
   onRemoteStream = null;
   onConnect = null;
   onError = null;
+  onClose = null;
+  onScreenShareEnded = null;
 }
 
 export default new WebRTCService();

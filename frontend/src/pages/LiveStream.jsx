@@ -29,11 +29,9 @@ const LiveStream = () => {
     };
 
     webrtcService.onConnect = () => {
-      console.log('WebRTC connected');
     };
 
     webrtcService.onError = (error) => {
-      console.error('WebRTC error:', error);
     };
 
     return () => {
@@ -60,12 +58,10 @@ const LiveStream = () => {
             await streamAPI.processFrame(sellerId, frameBlob);
           }
         } catch (error) {
-          console.error('Error processing frame:', error);
         }
       }, 2000); // Process frame every 2 seconds
 
     } catch (error) {
-      console.error('Error starting stream:', error);
       alert('Failed to start streaming. Please check camera permissions.');
     }
   };
@@ -87,7 +83,6 @@ const LiveStream = () => {
     try {
       webrtcService.joinBroadcast();
     } catch (error) {
-      console.error('Error joining stream:', error);
       alert('Failed to join stream');
     }
   };

@@ -11,6 +11,7 @@ const LiveStreamSeller = () => {
   const [sellerId, setSellerId] = useState('');
   const [hasStarted, setHasStarted] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [streamEnded, setStreamEnded] = useState(false);
   const [products, setProducts] = useState([]);
   const [pinnedProduct, setPinnedProduct] = useState(null);
   const [detectedProducts, setDetectedProducts] = useState([]);
@@ -34,14 +35,32 @@ const LiveStreamSeller = () => {
 
   useEffect(() => {
     loadProducts();
-  }, []);
+
+    // Cleanup on page unload
+    const handleBeforeUnload = () => {
+      if (isStreaming) {
+        endStream();
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('unload', handleBeforeUnload);
+
+    return () => {
+      if (isStreaming) {
+        endStream();
+      }
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('unload', handleBeforeUnload);
+    };
+  }, [isStreaming]);
 
   const loadProducts = async () => {
     try {
-      const response = await productAPI.getAll();
+      const response = await productAPI.getBySellerId(sellerId);
       setProducts(response.data);
     } catch (error) {
-      console.error('Error loading products:', error);
+      // Error loading products
     }
   };
 
@@ -51,7 +70,7 @@ const LiveStreamSeller = () => {
       return;
     }
     setHasStarted(true);
-    loadProducts();
+    setTimeout(() => loadProducts(), 100);
   };
 
   const startStream = async () => {
@@ -63,25 +82,49 @@ const LiveStreamSeller = () => {
     setStreamSource(source);
     
     try {
+      // Start livestream in database
+      const streamTitle = `${sellerId}'s Live Stream`;
+      const streamData = {
+        seller_id: sellerId,
+        seller_name: `Seller ${sellerId}`,
+        title: streamTitle,
+        description: 'Live product showcase'
+      };
+      
+      const streamResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/livestreams/start`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(streamData)
+      });
+      
+      if (!streamResponse.ok) {
+        const errorData = await streamResponse.json();
+        throw new Error(errorData.message || 'Failed to start livestream');
+      }
+      
+
+      
       let stream;
       if (source === 'screen') {
         stream = await webrtcService.initializeScreenShare();
-        console.log('Screen sharing initialized, stream:', stream);
+
         
         // Listen for screen share end
         stream.getVideoTracks()[0].addEventListener('ended', () => {
-          console.log('Screen sharing ended by user');
+
           alert('Screen sharing ended. Redirecting to dashboard...');
           window.location.href = '/';
         });
       } else {
         stream = await webrtcService.initializeCamera(currentCamera);
-        console.log('Camera initialized, stream:', stream);
+
       }
       
       // Ensure stream is set in WebRTC service
       webrtcService.localStream = stream;
-      console.log('🎥 SELLER: Stream ready for WebRTC sharing:', stream.getTracks().length, 'tracks');
+
       
       // Set streaming true first to render video element
       setIsStreaming(true);
@@ -90,71 +133,67 @@ const LiveStreamSeller = () => {
       setTimeout(() => {
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          console.log('Video stream set to video element');
+
         } else {
-          console.error('Video element still not found');
+
         }
       }, 50);
       
-      // Setup WebRTC signaling listeners FIRST
-      console.log('Setting up WebRTC signaling listeners');
-      if (!webrtcService.signalListenersSetup) {
-        webrtcService.setupSignalingListeners();
-        webrtcService.signalListenersSetup = true;
-      }
+      // Setup WebRTC signaling listeners
+
+      webrtcService.setupSignalingListeners();
       
-      // Final check - ensure stream is set
-      console.log('🔍 SELLER: Final check - Has local stream:', !!webrtcService.localStream);
+      // Debug: Log when seller is ready to receive offers
+
       
       // Connect to WebSocket with seller's room
-      console.log('Connecting to WebSocket room:', sellerId);
-      websocketService.connect(`seller-${sellerId}`, sellerId);
+
+      websocketService.connect(`seller-${sellerId}`, `seller-${sellerId}`);
       
       // Wait for WebSocket to connect
       websocketService.on('connected', async () => {
-        console.log('Seller WebSocket connected, ready to receive offers');
+
+        
+        // Notify that seller is live
         websocketService.send({
           type: 'seller_live',
           data: { seller_id: sellerId, status: 'live' }
         });
         
-        // Use SFU for scalable streaming (>10 viewers) or direct WebRTC for smaller groups
-        const useDirectWebRTC = false; // Use SFU for 1-to-many
+
         
-        if (useDirectWebRTC) {
-          // Direct WebRTC for better latency with fewer viewers
-          await webrtcDirectService.setLocalStream(stream);
-          await webrtcDirectService.connect(sellerId, 'publisher', `seller-${sellerId}`);
-          console.log('🎥 SELLER: Stream ready for direct WebRTC');
-        } else {
-          // SFU for scalable streaming
-          await sfuService.setLocalStream(stream);
-          await sfuService.connect(sellerId, 'publisher');
-          console.log('🎥 SELLER: Stream published to SFU');
-        }
-        
-        // Start frame processing for ML prediction
-        startFrameProcessing();
+        // Start frame processing for ML prediction (disabled for debugging)
+        // startFrameProcessing();
+
       });
       
       // Listen for auto pin updates
       websocketService.on('product_pinned', (message) => {
-        console.log('Auto pinned product:', message.data);
+
         loadPinnedProducts();
       });
     } catch (error) {
-      console.error('Error starting stream:', error);
+
       alert('Failed to access camera. Please check permissions.');
     }
   };
 
   const endStream = async () => {
     try {
+      // End livestream in database
+      const endResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/livestreams/end/${sellerId}`, {
+        method: 'POST'
+      });
+      
+      if (endResponse.ok) {
+
+      }
+      
       // Unpin all products for this seller
       await pinAPI.unpinAllProducts(sellerId);
-      console.log('All products unpinned for seller:', sellerId);
+
     } catch (error) {
-      console.error('Error unpinning products:', error);
+
     }
     
     websocketService.send({
@@ -173,15 +212,18 @@ const LiveStreamSeller = () => {
     }
     
     // Cleanup streaming services
-    webrtcService.destroy();
-    webrtcDirectService.disconnect();
-    sfuService.disconnect();
-    websocketService.disconnect();
+    try {
+      webrtcService.destroy();
+      websocketService.disconnect();
+    } catch (error) {
+
+    }
     
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
     setIsStreaming(false);
+    setStreamEnded(true);
   };
 
   const startFrameProcessing = () => {
@@ -211,12 +253,12 @@ const LiveStreamSeller = () => {
         if (blob) {
           try {
             const response = await streamAPI.predictFrame(sellerId, blob);
-            console.log('ML Response:', response.data);
+
             
             // Update detected products (recognized products)
             if (response.data.predictions?.length > 0) {
               setDetectedProducts(response.data.predictions);
-              console.log('Detected products:', response.data.predictions);
+
             } else {
               setDetectedProducts([]);
             }
@@ -224,12 +266,12 @@ const LiveStreamSeller = () => {
             // Update detected objects (all YOLO detections)
             if (response.data.detections?.length > 0) {
               setDetectedObjects(response.data.detections);
-              console.log('Detected objects:', response.data.detections);
+
             } else {
               setDetectedObjects([]);
             }
           } catch (error) {
-            console.error('Frame processing error:', error);
+
             setDetectedProducts([]);
             setDetectedObjects([]);
           }
@@ -237,7 +279,7 @@ const LiveStreamSeller = () => {
         setIsProcessingFrame(false);
       }, 'image/jpeg', 0.8);
     } catch (error) {
-      console.error('Frame capture error:', error);
+
       setIsProcessingFrame(false);
     }
   };
@@ -249,7 +291,7 @@ const LiveStreamSeller = () => {
         setPinnedProduct(response.data[0].product);
       }
     } catch (error) {
-      console.error('Error loading pinned products:', error);
+
     }
   };
 
@@ -265,44 +307,37 @@ const LiveStreamSeller = () => {
         setPinnedProduct(product);
       }
     } catch (error) {
-      console.error('Pin/unpin error:', error);
+
     }
   };
 
   useEffect(() => {
     if (isStreaming) {
       websocketService.on('user_joined', (message) => {
-        console.log('Viewer joined:', message.data);
+
         setStats(prev => ({ ...prev, viewers: prev.viewers + 1 }));
         
         // Ensure stream is available for new viewers
         if (videoRef.current && videoRef.current.srcObject) {
           webrtcService.localStream = videoRef.current.srcObject;
-          console.log('🔄 SELLER: Stream refreshed for new viewer');
+
         }
       });
       
-      websocketService.on('webrtc_offer', (message) => {
-        console.log('🔥 SELLER: Received WebRTC offer from viewer:', message.from);
-        
-        // Ensure WebRTC service has the current stream for each viewer
-        if (videoRef.current && videoRef.current.srcObject) {
-          console.log('🔧 SELLER: Setting stream to WebRTC service for viewer:', message.from);
-          webrtcService.localStream = videoRef.current.srcObject;
-          console.log('✅ SELLER: Stream set with', webrtcService.localStream.getTracks().length, 'tracks');
-        }
-      });
+
 
       websocketService.on('user_left', (message) => {
-        console.log('Viewer left:', message.data);
+
         setStats(prev => ({ ...prev, viewers: Math.max(0, prev.viewers - 1) }));
       });
 
-      websocketService.on('chat', (message) => {
-        setMessages(prev => [...prev, message.data]);
-      });
+      const handleChat = (message) => {
 
-      websocketService.on('reaction', (message) => {
+        setMessages(prev => [...prev, message.data]);
+      };
+
+      const handleReaction = (message) => {
+
         const newReaction = {
           id: Date.now() + Math.random(),
           emoji: message.data.emoji,
@@ -313,7 +348,10 @@ const LiveStreamSeller = () => {
         setTimeout(() => {
           setReactions(prev => prev.filter(r => r.id !== newReaction.id));
         }, 3000);
-      });
+      };
+
+      websocketService.on('chat', handleChat);
+      websocketService.on('reaction', handleReaction);
     }
   }, [isStreaming]);
 
@@ -343,9 +381,9 @@ const LiveStreamSeller = () => {
         videoRef.current.srcObject = stream;
       }
       
-      console.log(`Switched to ${newCamera === 'user' ? 'front' : 'back'} camera`);
+
     } catch (error) {
-      console.error('Error switching camera:', error);
+
       alert('Failed to switch camera');
     }
   };
@@ -454,12 +492,28 @@ const LiveStreamSeller = () => {
           <div className="relative w-full aspect-video bg-black rounded-xl overflow-hidden shadow-lg">
             {!isStreaming ? (
               <div className="absolute inset-0 flex items-center justify-center bg-gray-800">
-                <button
-                  onClick={startStream}
-                  className="px-8 py-4 bg-red-500 text-white font-bold rounded-lg hover:bg-red-600 transition-colors"
-                >
-                  Start Livestream
-                </button>
+                {streamEnded ? (
+                  <div className="text-center">
+                    <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center text-white mx-auto mb-4">
+                      <Video className="w-8 h-8 text-red-500" />
+                    </div>
+                    <p className="text-red-400 text-lg font-semibold mb-2">Stream Ended</p>
+                    <p className="text-gray-400 mb-4">Your livestream has ended successfully</p>
+                    <button
+                      onClick={() => window.location.href = '/'}
+                      className="px-6 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                    >
+                      Back to Dashboard
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={startStream}
+                    className="px-8 py-4 bg-red-500 text-white font-bold rounded-lg hover:bg-red-600 transition-colors"
+                  >
+                    Start Livestream
+                  </button>
+                )}
               </div>
             ) : (
               <>

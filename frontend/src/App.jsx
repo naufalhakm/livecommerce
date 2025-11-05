@@ -6,12 +6,14 @@ import LiveStreamViewer from './pages/LiveStreamViewer';
 import LiveStreamSeller from './pages/LiveStreamSeller';
 import CreateProduct from './pages/CreateProduct';
 import EditProduct from './pages/EditProduct';
+import LiveStreamList from './components/LiveStreamList';
 
 function App() {
   return (
     <Router>
       <Routes>
         <Route path="/" element={<Home />} />
+        <Route path="/streams" element={<LiveStreamList />} />
         <Route path="/viewer" element={<LiveStreamViewer />} />
         <Route path="/seller" element={<LiveStreamSeller />} />
         <Route path="/admin" element={<AdminDashboard />} />

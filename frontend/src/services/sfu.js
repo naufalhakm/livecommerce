@@ -26,7 +26,6 @@ class SFUService {
         
         this.ws.onopen = () => {
           clearTimeout(timeout);
-          console.log('🔗 SFU WebSocket connected');
           this.joinRoom();
           resolve();
         };
@@ -34,25 +33,21 @@ class SFUService {
         this.ws.onmessage = (event) => {
           try {
             if (!event.data || event.data.trim() === '') {
-              console.warn('⚠️ SFU: Received empty message');
               return;
             }
             const message = JSON.parse(event.data);
             this.handleMessage(message);
           } catch (error) {
-            console.error('❌ SFU: JSON parse error:', error, 'Raw data:', event.data);
           }
         };
 
         this.ws.onerror = (error) => {
           clearTimeout(timeout);
-          console.error('❌ SFU WebSocket error:', error);
           if (this.onError) this.onError(error);
           reject(error);
         };
 
       } catch (error) {
-        console.error('❌ SFU connection error:', error);
         if (this.onError) this.onError(error);
         reject(error);
       }
@@ -100,14 +95,12 @@ class SFUService {
     };
 
     this.pc.ontrack = (event) => {
-      console.log('🎥 SFU: Remote stream received');
       if (this.onRemoteStream && event.streams && event.streams[0]) {
         this.onRemoteStream(event.streams[0]);
       }
     };
 
     this.pc.onconnectionstatechange = () => {
-      console.log('SFU connection state:', this.pc.connectionState);
       if (this.pc.connectionState === 'connected' && this.onConnect) {
         this.onConnect();
       }
@@ -138,7 +131,6 @@ class SFUService {
     try {
       switch (message.type) {
         case 'joined':
-          console.log('✅ SFU: Joined room, setting up peer connection');
           await this.setupPeerConnection();
           break;
 
@@ -161,7 +153,6 @@ class SFUService {
               role: this.role,
               client_id: this.clientId
             });
-            console.log('✅ SFU: Answered server offer');
           }
           break;
 
@@ -172,9 +163,7 @@ class SFUService {
               sdp: message.data.sdp
             });
             await this.pc.setRemoteDescription(answer);
-            console.log('✅ SFU: Answer set, connection establishing');
           } else {
-            console.warn('⚠️ SFU: Received answer in wrong state:', this.pc?.signalingState);
           }
           break;
 
@@ -185,10 +174,8 @@ class SFUService {
           break;
 
         default:
-          console.log('SFU: Unknown message type:', message.type);
       }
     } catch (error) {
-      console.error('❌ SFU: Error handling message:', error);
     }
   }
 
@@ -200,7 +187,6 @@ class SFUService {
 
   async setLocalStream(stream) {
     this.localStream = stream;
-    console.log('🎥 SFU: Local stream set');
   }
 
   disconnect() {
@@ -213,7 +199,6 @@ class SFUService {
       this.ws = null;
     }
     this.localStream = null;
-    console.log('🔌 SFU: Disconnected');
   }
 }
 
