@@ -163,7 +163,7 @@ const LiveStreamSeller = () => {
 
         
         // Start frame processing for ML prediction (disabled for debugging)
-        // startFrameProcessing();
+        startFrameProcessing();
 
       });
       

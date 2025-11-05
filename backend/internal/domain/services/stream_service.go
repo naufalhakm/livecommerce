@@ -10,7 +10,6 @@ import (
 type StreamService interface {
 	ProcessStreamFrame(ctx context.Context, sellerID string, frame *multipart.FileHeader) (*entities.PredictionResponse, error)
 	PredictFrame(ctx context.Context, sellerID string, frame *multipart.FileHeader) (*entities.PredictionResponse, error)
-	AutoPinProduct(ctx context.Context, productID, sellerID string, similarityScore float64) error
 }
 
 type streamService struct {
@@ -53,9 +52,4 @@ func (s *streamService) PredictFrame(ctx context.Context, sellerID string, frame
 	}
 
 	return s.mlRepo.PredictProduct(sellerID, frameData)
-}
-
-func (s *streamService) AutoPinProduct(ctx context.Context, productID, sellerID string, similarityScore float64) error {
-	// Implementation for auto-pinning products based on ML predictions
-	return nil
 }
