@@ -6,20 +6,24 @@ import os
 from pathlib import Path
 
 class CLIPExtractor:
-    def __init__(self, model_name="openai/clip-vit-large-patch14-336"):
+    def __init__(self, model_name="openai/clip-vit-base-patch16"):
         self.model_name = model_name
         self.model = CLIPModel.from_pretrained(model_name)
         self.processor = CLIPProcessor.from_pretrained(model_name)
         
-        # Enable mixed precision for faster inference
+        # CPU optimizations
         if torch.cuda.is_available():
-            self.model = self.model.half()
+            self.model = self.model.half().cuda()
+        else:
+            # CPU optimizations
+            torch.set_num_threads(4)  # Limit CPU threads
+            self.model.eval()  # Set to eval mode
     
     def extract_embedding(self, image: Image.Image) -> np.ndarray:
         """Extract CLIP embedding from image with optimizations"""
-        # Resize image for optimal processing
-        if image.size[0] > 336 or image.size[1] > 336:
-            image = image.resize((336, 336), Image.Resampling.LANCZOS)
+        # Resize image for CPU optimization
+        if image.size[0] > 224 or image.size[1] > 224:
+            image = image.resize((224, 224), Image.Resampling.LANCZOS)
         
         inputs = self.processor(images=image, return_tensors="pt")
         

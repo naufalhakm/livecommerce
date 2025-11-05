@@ -167,8 +167,11 @@ const LiveStreamSeller = () => {
       
       // Listen for auto pin updates
       websocketService.on('product_pinned', (message) => {
-
         loadPinnedProducts();
+      });
+      
+      websocketService.on('product_unpinned', (message) => {
+        setPinnedProduct(null);
       });
     } catch (error) {
 
@@ -225,12 +228,12 @@ const LiveStreamSeller = () => {
   };
 
   const startFrameProcessing = () => {
-    // Process frame every 3 seconds for ML prediction
+    // Process frame every 5 seconds for CPU optimization
     frameProcessingRef.current = setInterval(async () => {
       if (videoRef.current && !isProcessingFrame) {
         await captureAndProcessFrame();
       }
-    }, 3000);
+    }, 5000);
   };
   
   const captureAndProcessFrame = async () => {
@@ -251,12 +254,39 @@ const LiveStreamSeller = () => {
         if (blob) {
           try {
             const response = await streamAPI.predictFrame(sellerId, blob);
-
             
             // Update detected products (recognized products)
             if (response.data.predictions?.length > 0) {
               setDetectedProducts(response.data.predictions);
-
+              
+              // Auto-pin high confidence products
+              const highConfidenceProducts = response.data.predictions.filter(
+                p => p.similarity_score >= 0.8
+              );
+              
+              if (highConfidenceProducts.length > 0) {
+                const bestProduct = highConfidenceProducts.reduce((prev, current) => 
+                  (prev.similarity_score > current.similarity_score) ? prev : current
+                );
+                
+                // Pin the best product
+                try {
+                  await pinAPI.pinProduct(bestProduct.product_id, sellerId, bestProduct.similarity_score);
+                  
+                  // Send WebSocket message to notify viewers
+                  websocketService.send({
+                    type: 'product_pinned',
+                    data: {
+                      product_id: bestProduct.product_id,
+                      product_name: bestProduct.product_name,
+                      price: bestProduct.price,
+                      similarity_score: bestProduct.similarity_score
+                    }
+                  });
+                } catch (error) {
+                  console.error('Failed to pin product:', error);
+                }
+              }
             } else {
               setDetectedProducts([]);
             }
@@ -299,10 +329,27 @@ const LiveStreamSeller = () => {
         // Unpin the product
         await pinAPI.unpinProduct(product.id, sellerId);
         setPinnedProduct(null);
+        
+        // Send WebSocket message
+        websocketService.send({
+          type: 'product_unpinned',
+          data: { product_id: product.id }
+        });
       } else {
         // Pin the product
         await pinAPI.pinProduct(product.id, sellerId, 1.0);
         setPinnedProduct(product);
+        
+        // Send WebSocket message
+        websocketService.send({
+          type: 'product_pinned',
+          data: {
+            product_id: product.id,
+            product_name: product.name,
+            price: product.price,
+            similarity_score: 1.0
+          }
+        });
       }
     } catch (error) {
 

@@ -6,6 +6,7 @@ from models.clip_extractor import CLIPExtractor
 from models.faiss_index import FAISSIndex
 from services.trainer import TrainerService
 from utils.config import Config
+from utils.cpu_optimizer import CPUOptimizer
 import logging
 
 import sys
@@ -20,7 +21,9 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Live Commerce ML Service")
 
-# Initialize components
+# Initialize components with CPU optimization
+CPUOptimizer.optimize_for_cpu()
+
 config = Config()
 yolo_detector = YOLODetector()
 clip_extractor = CLIPExtractor()

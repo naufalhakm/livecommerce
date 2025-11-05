@@ -202,6 +202,24 @@ func (s *webrtcService) handleMessage(conn *websocket.Conn, msg map[string]inter
 		}
 		return s.repo.BroadcastToRoom(roomID, message, clientID)
 
+	case "product_pinned":
+		message := entities.WebRTCMessage{
+			Type: "product_pinned",
+			Data: msg["data"],
+			Room: roomID,
+			From: clientID,
+		}
+		return s.repo.BroadcastToRoom(roomID, message, clientID)
+
+	case "product_unpinned":
+		message := entities.WebRTCMessage{
+			Type: "product_unpinned",
+			Data: msg["data"],
+			Room: roomID,
+			From: clientID,
+		}
+		return s.repo.BroadcastToRoom(roomID, message, clientID)
+
 	default:
 	}
 
