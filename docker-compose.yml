@@ -34,26 +34,8 @@ services:
     environment:
       - VITE_API_URL=https://livecomerce.laidtechnology.tech
       - VITE_WS_URL=wss://livecomerce.laidtechnology.tech
-      - VITE_SFU_URL=wss://livecomerce.laidtechnology.tech/sfu
     depends_on:
       - backend
-      - sfu
-
-  sfu:
-    build:
-      context: ./sfu
-      dockerfile: Dockerfile
-    ports:
-      - "8188:8188"
-    environment:
-      - PORT=8188
-      - SERVER_IP=159.65.7.56
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.5'
 
 volumes:
   postgres_data:
