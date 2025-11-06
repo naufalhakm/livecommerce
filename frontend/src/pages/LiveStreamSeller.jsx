@@ -275,7 +275,7 @@ const LiveStreamSeller = () => {
                 console.log('📌 Auto-pinning product:', bestProduct.product_name, 'Score:', bestProduct.similarity_score);
                 try {
                   console.log('Debug: Pinning product...');
-                  await pinAPI.pinProduct(bestProduct.product_id, sellerId, bestProduct.similarity_score);
+                  await pinAPI.pinProduct(bestProduct.product_id, parseInt(sellerId), bestProduct.similarity_score);
                   console.log('✅ Product pinned successfully');
                   
                   // Send WebSocket message to notify viewers
@@ -344,7 +344,7 @@ const LiveStreamSeller = () => {
         });
       } else {
         // Pin the product
-        await pinAPI.pinProduct(product.id, sellerId, 1.0);
+        await pinAPI.pinProduct(product.id, parseInt(sellerId), 1.0);
         setPinnedProduct(product);
         
         // Send WebSocket message
