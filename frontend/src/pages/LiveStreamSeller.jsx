@@ -260,9 +260,11 @@ const LiveStreamSeller = () => {
               setDetectedProducts(response.data.predictions);
               
               // Auto-pin high confidence products
+              console.log('🎯 All predictions:', response.data.predictions);
               const highConfidenceProducts = response.data.predictions.filter(
                 p => p.similarity_score >= 0.8
               );
+              console.log('📊 High confidence products (≥0.8):', highConfidenceProducts);
               
               if (highConfidenceProducts.length > 0) {
                 const bestProduct = highConfidenceProducts.reduce((prev, current) => 
@@ -270,11 +272,14 @@ const LiveStreamSeller = () => {
                 );
                 
                 // Pin the best product
+                console.log('📌 Auto-pinning product:', bestProduct.product_name, 'Score:', bestProduct.similarity_score);
                 try {
+                  console.log('Debug: Pinning product...');
                   await pinAPI.pinProduct(bestProduct.product_id, sellerId, bestProduct.similarity_score);
+                  console.log('✅ Product pinned successfully');
                   
                   // Send WebSocket message to notify viewers
-                  websocketService.send({
+                  const pinMessage = {
                     type: 'product_pinned',
                     data: {
                       product_id: bestProduct.product_id,
@@ -282,9 +287,11 @@ const LiveStreamSeller = () => {
                       price: bestProduct.price,
                       similarity_score: bestProduct.similarity_score
                     }
-                  });
+                  };
+                  console.log('📡 Sending WebSocket message:', pinMessage);
+                  websocketService.send(pinMessage);
                 } catch (error) {
-                  console.error('Failed to pin product:', error);
+                  console.error('❌ Failed to pin product:', error);
                 }
               }
             } else {
