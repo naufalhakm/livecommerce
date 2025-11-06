@@ -600,7 +600,7 @@ const LiveStreamSeller = () => {
                           height: `${height}px`,
                         }}
                       >
-                        <div className="absolute -top-6 left-0 bg-blue-500 text-white text-xs px-2 py-1 rounded">
+                        <div className="absolute -top-6 right-0 bg-blue-500 text-white text-xs px-2 py-1 rounded">
                           {obj.class} ({Math.round(obj.confidence * 100)}%)
                         </div>
                       </div>
