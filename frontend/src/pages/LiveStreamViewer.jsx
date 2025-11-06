@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import websocketService from '../services/websocket';
 import webrtcService from '../services/webrtc';
-import { Tv, Search, ShoppingCart, Bell, User, Volume2, VolumeX, Maximize, Minimize, Heart, ThumbsUp, Flame, PartyPopper, Send } from 'lucide-react';
+import { Tv, Search, ShoppingCart, Bell, User, Volume2, VolumeX, Maximize, Minimize, Heart, ThumbsUp, Flame, PartyPopper, Send, Pin } from 'lucide-react';
 
 const LiveStreamViewer = () => {
   const [searchParams] = useSearchParams();
@@ -258,6 +258,23 @@ const LiveStreamViewer = () => {
     if (!hasJoined) return;
 
     websocketService.on('product_pinned', async (message) => {
+      console.log('🔔 Product pinned WebSocket received:', message.data);
+      
+      // Show notification for all pinned products
+      setPinNotification({
+        id: Date.now(),
+        product_name: message.data.product_name,
+        price: message.data.price,
+        similarity_score: message.data.similarity_score
+      });
+      console.log('📢 Showing notification for:', message.data.product_name);
+      
+      // Hide notification after 4 seconds
+      setTimeout(() => {
+        console.log('🫥 Hiding notification');
+        setPinNotification(null);
+      }, 4000);
+      
       // Only update pin if similarity is high enough (80% or higher)
       if (message.data.similarity_score < 0.8) {
         return;
@@ -267,21 +284,6 @@ const LiveStreamViewer = () => {
         // Fetch full product details from API
         const response = await fetch(`${import.meta.env.VITE_API_URL}/api/products/${message.data.product_id}`);
         if (response.ok) {
-          console.log('📌 New product pinned:', message.data.product_name);
-          // Show notification
-          setPinNotification({
-            id: Date.now(),
-            product_name: message.data.product_name,
-            price: message.data.price,
-            similarity_score: message.data.similarity_score
-          });
-          console.log('Displaying pin notification for product:', message.data.product_name);
-          
-          // Hide notification after 4 seconds
-          setTimeout(() => {
-            setPinNotification(null);
-          }, 4000);
-          
           const productData = await response.json();
           setPinnedProduct({
             ...productData,
