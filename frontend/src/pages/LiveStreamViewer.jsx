@@ -258,23 +258,6 @@ const LiveStreamViewer = () => {
     if (!hasJoined) return;
 
     websocketService.on('product_pinned', async (message) => {
-      console.log('🔔 Product pinned WebSocket received:', message.data);
-      
-      // Show notification for all pinned products
-      setPinNotification({
-        id: Date.now(),
-        product_name: message.data.product_name,
-        price: message.data.price,
-        similarity_score: message.data.similarity_score
-      });
-      console.log('📢 Showing notification for:', message.data.product_name);
-      
-      // Hide notification after 4 seconds
-      setTimeout(() => {
-        console.log('🫥 Hiding notification');
-        setPinNotification(null);
-      }, 4000);
-      
       // Only update pin if similarity is high enough (80% or higher)
       if (message.data.similarity_score < 0.8) {
         return;
@@ -285,6 +268,19 @@ const LiveStreamViewer = () => {
         const response = await fetch(`${import.meta.env.VITE_API_URL}/api/products/${message.data.product_id}`);
         if (response.ok) {
           const productData = await response.json();
+          // Show notification using API data
+          setPinNotification({
+            id: Date.now(),
+            product_name: productData.name,
+            price: productData.price,
+            similarity_score: message.data.similarity_score
+          });
+          console.log('📢 Showing notification for:', productData.name);
+          
+          // Hide notification after 4 seconds
+          setTimeout(() => {
+            setPinNotification(null);
+          }, 4000);
           setPinnedProduct({
             ...productData,
             similarity_score: message.data.similarity_score
@@ -425,6 +421,21 @@ const LiveStreamViewer = () => {
         </div>
         <div className="flex items-center gap-4">
           <button 
+            onClick={() => {
+              console.log('🧪 Testing notification...');
+              setPinNotification({
+                id: Date.now(),
+                product_name: 'Test Product',
+                price: 100,
+                similarity_score: 0.85
+              });
+              setTimeout(() => setPinNotification(null), 4000);
+            }}
+            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium"
+          >
+            Test Notification
+          </button>
+          <button 
             onClick={() => navigate('/streams')}
             className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm font-medium"
           >
@@ -498,16 +509,16 @@ const LiveStreamViewer = () => {
                   animate={{ y: 0, opacity: 1 }}
                   exit={{ y: -100, opacity: 0 }}
                   transition={{ duration: 0.5, ease: "easeOut" }}
-                  className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50"
+                  className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 w-full max-w-sm px-4"
                 >
-                  <div className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-6 py-3 rounded-lg shadow-lg border border-green-400/30 backdrop-blur-sm">
+                  <div className="bg-gray-800/95 backdrop-blur-sm text-white px-6 py-3 rounded-lg shadow-xl border border-gray-600/50 mx-auto">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
-                        <Pin className="w-4 h-4" />
+                      <div className="w-8 h-8 bg-red-500/20 rounded-full flex items-center justify-center">
+                        <Pin className="w-4 h-4 text-red-400" />
                       </div>
                       <div>
-                        <div className="font-bold text-sm">New Product Pinned!</div>
-                        <div className="text-xs opacity-90">
+                        <div className="font-bold text-sm text-white">New Product Pinned!</div>
+                        <div className="text-xs text-gray-300">
                           {pinNotification.product_name} • ${pinNotification.price} • {Math.round(pinNotification.similarity_score * 100)}% match
                         </div>
                       </div>
