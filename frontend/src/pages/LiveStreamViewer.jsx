@@ -20,6 +20,7 @@ const LiveStreamViewer = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [reactions, setReactions] = useState([]);
   const [streamEnded, setStreamEnded] = useState(false);
+  const [pinNotification, setPinNotification] = useState(null);
   const videoRef = useRef(null);
   const videoContainerRef = useRef(null);
   const initialized = useRef(false);
@@ -257,7 +258,19 @@ const LiveStreamViewer = () => {
     if (!hasJoined) return;
 
     websocketService.on('product_pinned', async (message) => {
-
+      // Show notification
+      setPinNotification({
+        id: Date.now(),
+        product_name: message.data.product_name,
+        price: message.data.price,
+        similarity_score: message.data.similarity_score
+      });
+      
+      // Hide notification after 4 seconds
+      setTimeout(() => {
+        setPinNotification(null);
+      }, 4000);
+      
       // Only update pin if similarity is high enough (80% or higher)
       if (message.data.similarity_score < 0.8) {
         return;
@@ -272,9 +285,9 @@ const LiveStreamViewer = () => {
             ...productData,
             similarity_score: message.data.similarity_score
           });
-        } else {
         }
       } catch (error) {
+        console.error('Failed to fetch product details:', error);
       }
     });
 
@@ -472,6 +485,33 @@ const LiveStreamViewer = () => {
             )}
             
             <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent pointer-events-none"></div>
+            
+            {/* Pin Notification */}
+            <AnimatePresence>
+              {pinNotification && (
+                <motion.div
+                  initial={{ y: -100, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  exit={{ y: -100, opacity: 0 }}
+                  transition={{ duration: 0.5, ease: "easeOut" }}
+                  className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50"
+                >
+                  <div className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-6 py-3 rounded-lg shadow-lg border border-green-400/30 backdrop-blur-sm">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+                        <Pin className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="font-bold text-sm">New Product Pinned!</div>
+                        <div className="text-xs opacity-90">
+                          {pinNotification.product_name} • ${pinNotification.price} • {Math.round(pinNotification.similarity_score * 100)}% match
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* Floating Reactions */}
             <div className="absolute inset-0 pointer-events-none overflow-hidden">
