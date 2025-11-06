@@ -9,6 +9,7 @@ const api = axios.create({
 export const productAPI = {
   getAll: () => api.get('/products'),
   getById: (id) => api.get(`/products/${id}`),
+  getBySellerId: (sellerId) => api.get(`/products/seller/${sellerId}`),
   create: (product) => api.post('/products', product),
   createWithFile: (formData) => {
     return axios.post(`${API_BASE_URL}/api/products`, formData, {
@@ -76,6 +77,9 @@ export const pinAPI = {
   },
   unpinProduct: (productId, sellerId) => {
     return api.delete(`/products/${productId}/unpin?seller_id=${sellerId}`);
+  },
+  unpinAllProducts: (sellerId) => {
+    return api.delete(`/products/unpin-all/${sellerId}`);
   },
   getPinnedProducts: (sellerId) => api.get(`/products/pinned/${sellerId}`)
 };

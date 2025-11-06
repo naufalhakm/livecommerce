@@ -13,7 +13,12 @@ class Config:
         self.EMBEDDINGS_DIR.mkdir(exist_ok=True)
         self.MODELS_DIR.mkdir(exist_ok=True)
         
-        # Model configurations
-        self.YOLO_MODEL = "yolov8n.pt"
-        self.CLIP_MODEL = "openai/clip-vit-base-patch32"
+        # Model configurations - CPU optimized
+        self.YOLO_MODEL = "yolo11n.pt"
+        self.CLIP_MODEL = "openai/clip-vit-base-patch16"  # Faster for CPU
         self.EMBEDDING_DIM = 512
+        
+        # YOLO11 optimized settings
+        self.YOLO_CONF_THRESHOLD = 0.4
+        self.YOLO_IOU_THRESHOLD = 0.5
+        self.MIN_OBJECT_SIZE = 30

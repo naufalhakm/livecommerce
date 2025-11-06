@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import websocketService from '../services/websocket';
 import webrtcService from '../services/webrtc';
-import { Tv, Search, ShoppingCart, Bell, User, Volume2, VolumeX, Maximize, Minimize, Heart, ThumbsUp, Flame, PartyPopper, Send } from 'lucide-react';
+import { Tv, Search, ShoppingCart, Bell, User, Volume2, VolumeX, Maximize, Minimize, Heart, ThumbsUp, Flame, PartyPopper, Send, Pin } from 'lucide-react';
 
 const LiveStreamViewer = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [sellerId, setSellerId] = useState(searchParams.get('seller') || '');
-  const [hasJoined, setHasJoined] = useState(false);
+  const [hasJoined, setHasJoined] = useState(!!searchParams.get('seller'));
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [pinnedProduct, setPinnedProduct] = useState(null);
@@ -17,15 +18,230 @@ const LiveStreamViewer = () => {
   const [username] = useState(`Viewer${Math.floor(Math.random() * 1000)}`);
   const [isMuted, setIsMuted] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [reactions, setReactions] = useState([]);
+  const [streamEnded, setStreamEnded] = useState(false);
+  const [pinNotification, setPinNotification] = useState(null);
   const videoRef = useRef(null);
   const videoContainerRef = useRef(null);
   const initialized = useRef(false);
+  const [connectionStatus, setConnectionStatus] = useState('disconnected');
+  const [retryCount, setRetryCount] = useState(0);
+  const maxRetries = 3;
+
+  // Auto-join if seller parameter is provided in URL, otherwise redirect to streams list
+  useEffect(() => {
+    const sellerParam = searchParams.get('seller');
+    if (sellerParam && !hasJoined) {
+      setSellerId(sellerParam);
+      setHasJoined(true);
+    } else if (!sellerParam && !hasJoined) {
+      // Redirect to streams list if no seller parameter
+      navigate('/streams');
+    }
+  }, [searchParams, hasJoined, navigate]);
 
   useEffect(() => {
-    if (searchParams.get('seller')) {
-      joinStream(searchParams.get('seller'));
+    if (hasJoined && sellerId && !initialized.current) {
+      initialized.current = true;
+      
+      setupConnectionCallbacks();
+      initializeStreaming();
     }
+
+    // Cleanup on page unload
+    const handleBeforeUnload = () => {
+      cleanupConnection();
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('unload', handleBeforeUnload);
+
+    return () => {
+      cleanupConnection();
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('unload', handleBeforeUnload);
+    };
+  }, [hasJoined, sellerId]);
+
+  // Setup chat and reaction handlers
+  useEffect(() => {
+    const handleChat = (message) => {
+      setMessages(prev => [...prev, message.data]);
+    };
+
+    const handleReaction = (message) => {
+      const newReaction = {
+        id: Date.now() + Math.random(),
+        emoji: message.data.emoji,
+        x: Math.random() * 80 + 10,
+      };
+      setReactions(prev => [...prev, newReaction]);
+      
+      setTimeout(() => {
+        setReactions(prev => prev.filter(r => r.id !== newReaction.id));
+      }, 3000);
+    };
+
+    const handleSellerOffline = (message) => {
+      setStreamEnded(true);
+      setIsPlaying(false);
+    };
+
+    websocketService.on('chat', handleChat);
+    websocketService.on('reaction', handleReaction);
+    websocketService.on('seller_offline', handleSellerOffline);
+
+    return () => {
+      websocketService.off('chat', handleChat);
+      websocketService.off('reaction', handleReaction);
+      websocketService.off('seller_offline', handleSellerOffline);
+    };
   }, []);
+
+
+  const setupConnectionCallbacks = () => {
+    // Enhanced WebSocket connection management
+    websocketService.setConnectionCallbacks({
+      onConnected: () => {
+        setConnectionStatus('connected');
+        setRetryCount(0);
+      },
+      onDisconnected: (event) => {
+        setConnectionStatus('disconnected');
+        
+        if (retryCount < maxRetries) {
+          setRetryCount(prev => prev + 1);
+          setTimeout(() => {
+            if (hasJoined && sellerId) {
+              initializeStreaming();
+            }
+          }, 2000 * retryCount);
+        }
+      },
+      onError: (error) => {
+        setConnectionStatus('error');
+      }
+    });
+  };
+
+  const initializeStreaming = async () => {
+    try {
+      setConnectionStatus('connecting');
+      
+      // Setup WebRTC callbacks
+      setupWebRTCCallbacks();
+      
+      // Setup WebSocket event handlers BEFORE connecting
+      setupWebSocketHandlers();
+      
+      // Connect to seller's room
+      const viewerClientId = `viewer-${Date.now()}`;
+      websocketService.connect(viewerClientId, `seller-${sellerId}`);
+      
+    } catch (error) {
+      setConnectionStatus('error');
+    }
+  };
+
+  const setupWebRTCCallbacks = () => {
+    webrtcService.onRemoteStream = (stream) => {
+      if (!stream) {
+        return;
+      }
+      
+      handleStreamSetup(stream);
+    };
+    
+    webrtcService.onError = (error) => {
+      setConnectionStatus('error');
+    };
+  };
+
+  const setupWebSocketHandlers = () => {
+    // Setup WebRTC signaling listeners first
+    webrtcService.setupSignalingListeners();
+    
+    // Setup WebSocket event handlers
+    websocketService.on('connected', () => {
+      setConnectionStatus('connected');
+      setRetryCount(0);
+    });
+    
+    // Wait for join confirmation, then initiate WebRTC
+    websocketService.on('joined', async (message) => {
+      try {
+        
+        // Add delay to ensure WebSocket is fully ready
+        setTimeout(async () => {
+          try {
+            
+            // Join broadcast by creating offer to seller
+            const peer = await webrtcService.joinBroadcast(`seller-${sellerId}`);
+          } catch (error) {
+            setConnectionStatus('error');
+          }
+        }, 100);
+      } catch (error) {
+        setConnectionStatus('error');
+      }
+    });
+  };
+
+  const handleStreamSetup = (stream) => {
+    if (!stream || !stream.active) {
+      return;
+    }
+    
+    // Verify video track is enabled
+    const videoTrack = stream.getVideoTracks()[0];
+    if (videoTrack) {
+      // Ensure video track is enabled
+      videoTrack.enabled = true;
+    }
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.muted = true; // Audio muted for viewer
+      videoRef.current.playsInline = true;
+      
+      videoRef.current.onloadedmetadata = () => {
+        
+        // Only set playing if we have actual video content
+        if (videoRef.current.videoWidth > 0 && videoRef.current.videoHeight > 0) {
+          setIsPlaying(true);
+          setConnectionStatus('connected');
+        } else {
+        }
+        
+        videoRef.current.play().catch(e => {
+        });
+      };
+      
+      videoRef.current.onerror = (e) => {
+        setConnectionStatus('error');
+      };
+    }
+  };
+
+  const cleanupConnection = () => {
+    if (initialized.current) {
+      initialized.current = false;
+      
+      try {
+        webrtcService.destroy();
+        websocketService.disconnect();
+      } catch (error) {
+      }
+      
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+      
+      setIsPlaying(false);
+      setConnectionStatus('disconnected');
+    }
+  };
+
 
   const joinStream = (sellerIdToJoin) => {
     if (!sellerIdToJoin) {
@@ -37,108 +253,64 @@ const LiveStreamViewer = () => {
     navigate(`/viewer?seller=${sellerIdToJoin}`, { replace: true });
   };
 
+  // Setup additional WebSocket handlers for product and user events
   useEffect(() => {
-    if (hasJoined && sellerId && !initialized.current) {
-      initialized.current = true;
-      console.log('🚀 Initializing viewer connection...');
+    if (!hasJoined) return;
+
+    websocketService.on('product_pinned', async (message) => {
+      // Only update pin if similarity is high enough (80% or higher)
+      if (message.data.similarity_score < 0.8) {
+        return;
+      }
       
-      // Setup WebRTC callbacks BEFORE connecting
-      webrtcService.onRemoteStream = (stream) => {
-        console.log('✅ Received remote stream:', stream);
-        console.log('Stream active:', stream.active);
-        console.log('Video tracks:', stream.getVideoTracks().length);
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          setIsPlaying(true);
-          console.log('✅ Video stream set for viewer');
-        } else {
-          console.error('❌ videoRef.current is null');
+      try {
+        // Fetch full product details from API
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/products/${message.data.product_id}`);
+        if (response.ok) {
+          const productData = await response.json();
+          // Show notification using API data
+          setPinNotification({
+            id: Date.now(),
+            product_name: productData.name,
+            price: productData.price,
+            similarity_score: message.data.similarity_score
+          });
+          
+          // Hide notification after 4 seconds
+          setTimeout(() => {
+            setPinNotification(null);
+          }, 4000);
+          setPinnedProduct({
+            ...productData,
+            similarity_score: message.data.similarity_score
+          });
         }
-      };
-      
-      webrtcService.onConnect = () => {
-        console.log('✅ WebRTC peer connected');
-      };
-      
-      webrtcService.onError = (error) => {
-        console.error('❌ WebRTC error:', error);
-      };
+      } catch (error) {
+        console.error('Failed to fetch product details:', error);
+      }
+    });
 
-      // Connect to seller's room
-      websocketService.connect(`viewer-${Date.now()}`, sellerId);
-      
-      // Wait for WebSocket to connect before joining WebRTC
-      const handleConnected = async () => {
-        try {
-          await webrtcService.joinBroadcast(`seller-${sellerId}`);
-          console.log('✅ Joined broadcast as viewer');
-        } catch (error) {
-          console.error('❌ Error joining broadcast:', error);
-        }
-      };
+    websocketService.on('pin_product', (message) => {
+      if (message.data.product) {
+        setPinnedProduct(message.data.product);
+      }
+    });
 
-      websocketService.on('connected', handleConnected);
+    websocketService.on('user_joined', (message) => {
+      setViewerCount(prev => prev + 1);
+    });
 
-      websocketService.on('product_detection', (message) => {
-        console.log('🔍 Product detection:', message.data);
-        // Don't auto-pin from detection, only from explicit pin events
-      });
-
-      websocketService.on('product_pinned', async (message) => {
-        console.log('🎯 Auto pinned product:', message.data);
-        
-        // Only update pin if similarity is high enough (80% or higher)
-        if (message.data.similarity_score < 0.8) {
-          console.log('⚠️ Similarity too low, not updating pin:', message.data.similarity_score);
-          return;
-        }
-        
-        try {
-          // Fetch full product details from API
-          const response = await fetch(`${import.meta.env.VITE_API_URL}/api/products/${message.data.product_id}`);
-          if (response.ok) {
-            const productData = await response.json();
-            setPinnedProduct({
-              ...productData,
-              similarity_score: message.data.similarity_score
-            });
-            console.log('✅ Product pinned with high similarity:', message.data.similarity_score);
-          } else {
-            console.log('❌ Product not found in API, not updating pin');
-          }
-        } catch (error) {
-          console.error('Error fetching product details:', error);
-          console.log('❌ API error, not updating pin');
-        }
-      });
-
-      websocketService.on('pin_product', (message) => {
-        if (message.data.product) {
-          setPinnedProduct(message.data.product);
-        }
-      });
-
-      websocketService.on('chat', (message) => {
-        setMessages(prev => [...prev, message.data]);
-      });
-
-      websocketService.on('user_joined', (message) => {
-        setViewerCount(prev => prev + 1);
-      });
-
-      websocketService.on('user_left', (message) => {
-        setViewerCount(prev => Math.max(0, prev - 1));
-      });
-    }
+    websocketService.on('user_left', (message) => {
+      setViewerCount(prev => Math.max(0, prev - 1));
+    });
 
     return () => {
-      if (initialized.current) {
-        console.log('🧹 Cleaning up viewer connection');
-        webrtcService.destroy();
-        websocketService.disconnect();
-      }
+      websocketService.off('product_pinned');
+      websocketService.off('pin_product');
+      websocketService.off('user_joined');
+      websocketService.off('user_left');
     };
-  }, [hasJoined, sellerId]);
+  }, [hasJoined]);
 
   const sendMessage = () => {
     if (newMessage.trim()) {
@@ -173,7 +345,6 @@ const LiveStreamViewer = () => {
         setIsFullscreen(false);
       }
     } catch (error) {
-      console.error('Fullscreen error:', error);
     }
   };
 
@@ -219,10 +390,10 @@ const LiveStreamViewer = () => {
             </button>
 
             <button
-              onClick={() => navigate('/')}
+              onClick={() => navigate('/streams')}
               className="w-full bg-gray-700 text-white font-medium py-3 rounded-lg hover:bg-gray-600 transition-colors"
             >
-              Back to Home
+              Back to Streams
             </button>
           </div>
         </div>
@@ -248,6 +419,12 @@ const LiveStreamViewer = () => {
           </div>
         </div>
         <div className="flex items-center gap-4">
+          <button 
+            onClick={() => navigate('/streams')}
+            className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm font-medium"
+          >
+            Browse Streams
+          </button>
           <button className="p-2 bg-gray-800 rounded-lg text-white hover:bg-gray-700">
             <ShoppingCart className="w-5 h-5" />
           </button>
@@ -269,27 +446,90 @@ const LiveStreamViewer = () => {
               playsInline
               muted
               className="w-full h-full object-cover"
-              style={{ display: isPlaying ? 'block' : 'none' }}
             />
             {!isPlaying && (
               <div className="absolute inset-0 w-full h-full bg-gray-800 flex items-center justify-center">
                 <div className="text-center">
-                  <div className="w-16 h-16 bg-black/40 rounded-full flex items-center justify-center text-white mx-auto mb-4 animate-pulse">
-                    <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  </div>
-                  <p className="text-gray-400 animate-pulse">Connecting to Seller {sellerId}...</p>
-                  <div className="flex justify-center mt-3">
-                    <div className="flex space-x-1">
-                      <div className="w-2 h-2 bg-red-500 rounded-full animate-bounce"></div>
-                      <div className="w-2 h-2 bg-red-500 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-                      <div className="w-2 h-2 bg-red-500 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
-                    </div>
-                  </div>
+                  {streamEnded ? (
+                    <>
+                      <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center text-white mx-auto mb-4">
+                        <Tv className="w-8 h-8 text-red-500" />
+                      </div>
+                      <p className="text-red-400 text-lg font-semibold mb-2">Stream Ended</p>
+                      <p className="text-gray-400">Seller {sellerId} has ended the livestream</p>
+                      <button
+                        onClick={() => navigate('/streams')}
+                        className="mt-4 px-6 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                      >
+                        Browse Other Streams
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <div className="w-16 h-16 bg-black/40 rounded-full flex items-center justify-center text-white mx-auto mb-4 animate-pulse">
+                        <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      </div>
+                      <p className="text-gray-400 animate-pulse">Connecting to Seller {sellerId}...</p>
+                      <div className="flex justify-center mt-3">
+                        <div className="flex space-x-1">
+                          <div className="w-2 h-2 bg-red-500 rounded-full animate-bounce"></div>
+                          <div className="w-2 h-2 bg-red-500 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                          <div className="w-2 h-2 bg-red-500 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             )}
             
             <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent pointer-events-none"></div>
+            
+            {/* Pin Notification */}
+            <AnimatePresence>
+              {pinNotification && (
+                <motion.div
+                  initial={{ y: -100, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  exit={{ y: -100, opacity: 0 }}
+                  transition={{ duration: 0.5, ease: "easeOut" }}
+                  className="absolute top-4 left-0 right-0 z-50 flex justify-center"
+                >
+                  <div className="bg-gray-800/95 backdrop-blur-sm text-white px-6 py-3 rounded-lg shadow-xl border border-gray-600/50">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-red-500/20 rounded-full flex items-center justify-center">
+                        <Pin className="w-4 h-4 text-red-400" />
+                      </div>
+                      <div>
+                        <div className="font-bold text-sm text-white">New Product Pinned!</div>
+                        <div className="text-xs text-gray-300">
+                          {pinNotification.product_name} • ${pinNotification.price} • {Math.round(pinNotification.similarity_score * 100)}% match
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Floating Reactions */}
+            <div className="absolute inset-0 pointer-events-none overflow-hidden">
+              <AnimatePresence>
+                {reactions.map((reaction) => (
+                  <motion.div
+                    key={reaction.id}
+                    className="absolute bottom-20 text-4xl"
+                    style={{ left: `${reaction.x}%` }}
+                    initial={{ opacity: 1, y: 0, scale: 0.8 }}
+                    animate={{ opacity: 0, y: -200, scale: 1.2 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 3, ease: "easeOut" }}
+                  >
+                    {reaction.emoji}
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
 
             <div className="absolute bottom-4 left-4 right-4">
               <div className="flex items-center justify-between">

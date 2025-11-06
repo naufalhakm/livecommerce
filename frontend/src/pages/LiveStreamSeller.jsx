@@ -1,17 +1,24 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { productAPI, streamAPI, pinAPI } from '../services/api';
 import websocketService from '../services/websocket';
 import webrtcService from '../services/webrtc';
-import { LayoutDashboard, Package, Tv, FileText, TrendingUp, Settings, LogOut, Video, Eye, Plus, Pin, Send } from 'lucide-react';
+import { LayoutDashboard, Package, Tv, FileText, TrendingUp, Settings, LogOut, Video, Eye, Plus, Pin, Send, RotateCcw } from 'lucide-react';
 
 const LiveStreamSeller = () => {
   const [sellerId, setSellerId] = useState('');
   const [hasStarted, setHasStarted] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [streamEnded, setStreamEnded] = useState(false);
   const [products, setProducts] = useState([]);
   const [pinnedProduct, setPinnedProduct] = useState(null);
   const [detectedProducts, setDetectedProducts] = useState([]);
+  const [detectedObjects, setDetectedObjects] = useState([]);
   const [isProcessingFrame, setIsProcessingFrame] = useState(false);
+  const [reactions, setReactions] = useState([]);
+  const [currentCamera, setCurrentCamera] = useState('user'); // 'user' = front, 'environment' = back
+  const [streamSource, setStreamSource] = useState(''); // 'camera' or 'screen'
+  const [showSourceModal, setShowSourceModal] = useState(false);
   const [stats, setStats] = useState({
     sales: 0,
     orders: 0,
@@ -26,14 +33,32 @@ const LiveStreamSeller = () => {
 
   useEffect(() => {
     loadProducts();
-  }, []);
+
+    // Cleanup on page unload
+    const handleBeforeUnload = () => {
+      if (isStreaming) {
+        endStream();
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('unload', handleBeforeUnload);
+
+    return () => {
+      if (isStreaming) {
+        endStream();
+      }
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('unload', handleBeforeUnload);
+    };
+  }, [isStreaming]);
 
   const loadProducts = async () => {
     try {
-      const response = await productAPI.getAll();
+      const response = await productAPI.getBySellerId(sellerId);
       setProducts(response.data);
     } catch (error) {
-      console.error('Error loading products:', error);
+      // Error loading products
     }
   };
 
@@ -43,13 +68,61 @@ const LiveStreamSeller = () => {
       return;
     }
     setHasStarted(true);
-    loadProducts();
+    setTimeout(() => loadProducts(), 100);
   };
 
   const startStream = async () => {
+    setShowSourceModal(true);
+  };
+
+  const startStreamWithSource = async (source) => {
+    setShowSourceModal(false);
+    setStreamSource(source);
+    
     try {
-      const stream = await webrtcService.initializeCamera();
-      console.log('✅ Camera initialized, stream:', stream);
+      // Start livestream in database
+      const streamTitle = `${sellerId}'s Live Stream`;
+      const streamData = {
+        seller_id: sellerId,
+        seller_name: `Seller ${sellerId}`,
+        title: streamTitle,
+        description: 'Live product showcase'
+      };
+      
+      const streamResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/livestreams/start`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(streamData)
+      });
+      
+      if (!streamResponse.ok) {
+        const errorData = await streamResponse.json();
+        throw new Error(errorData.message || 'Failed to start livestream');
+      }
+      
+
+      
+      let stream;
+      if (source === 'screen') {
+        stream = await webrtcService.initializeScreenShare();
+
+        
+        // Listen for screen share end
+        stream.getVideoTracks()[0].addEventListener('ended', () => {
+
+          alert('Screen sharing ended. Redirecting to dashboard...');
+          window.location.href = '/';
+        });
+      } else {
+        stream = await webrtcService.initializeCamera(currentCamera);
+
+      }
+      
+      // Ensure stream is set in WebRTC service
+      webrtcService.localStream = stream;
+
       
       // Set streaming true first to render video element
       setIsStreaming(true);
@@ -58,45 +131,72 @@ const LiveStreamSeller = () => {
       setTimeout(() => {
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          console.log('✅ Video stream set to video element');
+
         } else {
-          console.error('❌ Video element still not found');
+
         }
       }, 50);
       
-      // Setup WebRTC signaling listeners FIRST
-      console.log('🔧 Setting up WebRTC signaling listeners');
+      // Setup WebRTC signaling listeners
+
       webrtcService.setupSignalingListeners();
-      webrtcService.signalListenersSetup = true;
+      
+      // Debug: Log when seller is ready to receive offers
+
       
       // Connect to WebSocket with seller's room
-      console.log('🔌 Connecting to WebSocket room:', sellerId);
-      websocketService.connect(`seller-${sellerId}`, sellerId);
+
+      websocketService.connect(`seller-${sellerId}`, `seller-${sellerId}`);
       
       // Wait for WebSocket to connect
-      websocketService.on('connected', () => {
-        console.log('✅ Seller WebSocket connected, ready to receive offers');
+      websocketService.on('connected', async () => {
+
+        
+        // Notify that seller is live
         websocketService.send({
           type: 'seller_live',
           data: { seller_id: sellerId, status: 'live' }
         });
         
-        // Start frame processing for ML prediction
+
+        
+        // Start frame processing for ML prediction (disabled for debugging)
         startFrameProcessing();
+
       });
       
       // Listen for auto pin updates
       websocketService.on('product_pinned', (message) => {
-        console.log('🎯 Auto pinned product:', message.data);
         loadPinnedProducts();
       });
+      
+      websocketService.on('product_unpinned', (message) => {
+        setPinnedProduct(null);
+      });
     } catch (error) {
-      console.error('❌ Error starting stream:', error);
+
       alert('Failed to access camera. Please check permissions.');
     }
   };
 
-  const endStream = () => {
+  const endStream = async () => {
+    try {
+      // End livestream in database
+      const endResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/livestreams/end/${sellerId}`, {
+        method: 'POST'
+      });
+      
+      if (endResponse.ok) {
+
+      }
+      
+      // Unpin all products for this seller
+      await pinAPI.unpinAllProducts(sellerId);
+
+    } catch (error) {
+
+    }
+    
     websocketService.send({
       type: 'seller_offline',
       data: { seller_id: sellerId, status: 'offline' }
@@ -107,21 +207,33 @@ const LiveStreamSeller = () => {
       clearInterval(frameProcessingRef.current);
     }
     
-    webrtcService.destroy();
-    websocketService.disconnect();
+    // Stop all tracks
+    if (videoRef.current && videoRef.current.srcObject) {
+      videoRef.current.srcObject.getTracks().forEach(track => track.stop());
+    }
+    
+    // Cleanup streaming services
+    try {
+      webrtcService.destroy();
+      websocketService.disconnect();
+    } catch (error) {
+
+    }
+    
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
     setIsStreaming(false);
+    setStreamEnded(true);
   };
 
   const startFrameProcessing = () => {
-    // Process frame every 3 seconds for ML prediction
+    // Process frame every 5 seconds for CPU optimization
     frameProcessingRef.current = setInterval(async () => {
       if (videoRef.current && !isProcessingFrame) {
         await captureAndProcessFrame();
       }
-    }, 3000);
+    }, 5000);
   };
   
   const captureAndProcessFrame = async () => {
@@ -142,18 +254,61 @@ const LiveStreamSeller = () => {
         if (blob) {
           try {
             const response = await streamAPI.predictFrame(sellerId, blob);
+            
+            // Update detected products (recognized products)
             if (response.data.predictions?.length > 0) {
               setDetectedProducts(response.data.predictions);
-              console.log('🔍 Detected products:', response.data.predictions);
+              
+              // Auto-pin high confidence products
+              const highConfidenceProducts = response.data.predictions.filter(
+                p => p.similarity_score >= 0.8
+              );
+              
+              if (highConfidenceProducts.length > 0) {
+                const bestProduct = highConfidenceProducts.reduce((prev, current) => 
+                  (prev.similarity_score > current.similarity_score) ? prev : current
+                );
+                
+                // Pin the best product
+                try {
+                  await pinAPI.pinProduct(bestProduct.product_id, parseInt(sellerId), bestProduct.similarity_score);
+                  
+                  // Send WebSocket message to notify viewers
+                  const pinMessage = {
+                    type: 'product_pinned',
+                    data: {
+                      product_id: bestProduct.product_id,
+                      product_name: bestProduct.product_name,
+                      price: bestProduct.price,
+                      similarity_score: bestProduct.similarity_score
+                    }
+                  };
+                  websocketService.send(pinMessage);
+                } catch (error) {
+                  console.error('❌ Failed to pin product:', error);
+                }
+              }
+            } else {
+              setDetectedProducts([]);
+            }
+            
+            // Update detected objects (all YOLO detections)
+            if (response.data.detections?.length > 0) {
+              setDetectedObjects(response.data.detections);
+
+            } else {
+              setDetectedObjects([]);
             }
           } catch (error) {
-            console.error('Frame processing error:', error);
+
+            setDetectedProducts([]);
+            setDetectedObjects([]);
           }
         }
         setIsProcessingFrame(false);
       }, 'image/jpeg', 0.8);
     } catch (error) {
-      console.error('Frame capture error:', error);
+
       setIsProcessingFrame(false);
     }
   };
@@ -165,7 +320,7 @@ const LiveStreamSeller = () => {
         setPinnedProduct(response.data[0].product);
       }
     } catch (error) {
-      console.error('Error loading pinned products:', error);
+
     }
   };
 
@@ -175,35 +330,74 @@ const LiveStreamSeller = () => {
         // Unpin the product
         await pinAPI.unpinProduct(product.id, sellerId);
         setPinnedProduct(null);
+        
+        // Send WebSocket message
+        websocketService.send({
+          type: 'product_unpinned',
+          data: { product_id: product.id }
+        });
       } else {
         // Pin the product
-        await pinAPI.pinProduct(product.id, sellerId, 1.0);
+        await pinAPI.pinProduct(product.id, parseInt(sellerId), 1.0);
         setPinnedProduct(product);
+        
+        // Send WebSocket message
+        websocketService.send({
+          type: 'product_pinned',
+          data: {
+            product_id: product.id,
+            product_name: product.name,
+            price: product.price,
+            similarity_score: 1.0
+          }
+        });
       }
     } catch (error) {
-      console.error('Pin/unpin error:', error);
+
     }
   };
 
   useEffect(() => {
     if (isStreaming) {
       websocketService.on('user_joined', (message) => {
-        console.log('Viewer joined:', message.data);
+
         setStats(prev => ({ ...prev, viewers: prev.viewers + 1 }));
+        
+        // Ensure stream is available for new viewers
+        if (videoRef.current && videoRef.current.srcObject) {
+          webrtcService.localStream = videoRef.current.srcObject;
+
+        }
       });
       
-      websocketService.on('webrtc_offer', (message) => {
-        console.log('🎯 Seller received offer from:', message.from);
-      });
+
 
       websocketService.on('user_left', (message) => {
-        console.log('Viewer left:', message.data);
+
         setStats(prev => ({ ...prev, viewers: Math.max(0, prev.viewers - 1) }));
       });
 
-      websocketService.on('chat', (message) => {
+      const handleChat = (message) => {
+
         setMessages(prev => [...prev, message.data]);
-      });
+      };
+
+      const handleReaction = (message) => {
+
+        const newReaction = {
+          id: Date.now() + Math.random(),
+          emoji: message.data.emoji,
+          x: Math.random() * 80 + 10,
+        };
+        setReactions(prev => [...prev, newReaction]);
+        
+        setTimeout(() => {
+          setReactions(prev => prev.filter(r => r.id !== newReaction.id));
+        }, 3000);
+      };
+
+      websocketService.on('chat', handleChat);
+      websocketService.on('reaction', handleReaction);
     }
   }, [isStreaming]);
 
@@ -211,6 +405,32 @@ const LiveStreamSeller = () => {
     if (newMessage.trim()) {
       websocketService.sendChat(newMessage, `Seller ${sellerId}`);
       setNewMessage('');
+    }
+  };
+
+  const switchCamera = async () => {
+    if (!isStreaming || streamSource === 'screen') return;
+    
+    try {
+      // Stop current stream
+      if (videoRef.current && videoRef.current.srcObject) {
+        videoRef.current.srcObject.getTracks().forEach(track => track.stop());
+      }
+      
+      // Switch camera
+      const newCamera = currentCamera === 'user' ? 'environment' : 'user';
+      setCurrentCamera(newCamera);
+      
+      // Initialize new camera
+      const stream = await webrtcService.initializeCamera(newCamera);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+      
+
+    } catch (error) {
+
+      alert('Failed to switch camera');
     }
   };
 
@@ -318,22 +538,111 @@ const LiveStreamSeller = () => {
           <div className="relative w-full aspect-video bg-black rounded-xl overflow-hidden shadow-lg">
             {!isStreaming ? (
               <div className="absolute inset-0 flex items-center justify-center bg-gray-800">
-                <button
-                  onClick={startStream}
-                  className="px-8 py-4 bg-red-500 text-white font-bold rounded-lg hover:bg-red-600 transition-colors"
-                >
-                  Start Livestream
-                </button>
+                {streamEnded ? (
+                  <div className="text-center">
+                    <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center text-white mx-auto mb-4">
+                      <Video className="w-8 h-8 text-red-500" />
+                    </div>
+                    <p className="text-red-400 text-lg font-semibold mb-2">Stream Ended</p>
+                    <p className="text-gray-400 mb-4">Your livestream has ended successfully</p>
+                    <button
+                      onClick={() => window.location.href = '/'}
+                      className="px-6 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                    >
+                      Back to Dashboard
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={startStream}
+                    className="px-8 py-4 bg-red-500 text-white font-bold rounded-lg hover:bg-red-600 transition-colors"
+                  >
+                    Start Livestream
+                  </button>
+                )}
               </div>
             ) : (
               <>
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="w-full h-full object-cover"
-                />
+                <div className="relative w-full h-full">
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-full object-cover"
+                  />
+                  
+                  {/* Object Detection Bounding Boxes */}
+                  {detectedObjects.map((obj, index) => {
+                    if (!videoRef.current) return null;
+                    
+                    const videoRect = videoRef.current.getBoundingClientRect();
+                    const videoWidth = videoRef.current.videoWidth || 640;
+                    const videoHeight = videoRef.current.videoHeight || 480;
+                    
+                    const scaleX = videoRect.width / videoWidth;
+                    const scaleY = videoRect.height / videoHeight;
+                    
+                    const [x1, y1, x2, y2] = obj.bbox;
+                    const left = x1 * scaleX;
+                    const top = y1 * scaleY;
+                    const width = (x2 - x1) * scaleX;
+                    const height = (y2 - y1) * scaleY;
+                    
+                    return (
+                      <div
+                        key={`obj-${index}`}
+                        className="absolute border-2 border-blue-400 bg-blue-400/10"
+                        style={{
+                          left: `${left}px`,
+                          top: `${top}px`,
+                          width: `${width}px`,
+                          height: `${height}px`,
+                        }}
+                      >
+                        <div className="absolute -top-6 right-0 bg-blue-500 text-white text-xs px-2 py-1 rounded">
+                          {obj.class} ({Math.round(obj.confidence * 100)}%)
+                        </div>
+                      </div>
+                    );
+                  })}
+                  
+                  {/* Product Recognition Bounding Boxes */}
+                  {detectedProducts.map((product, index) => {
+                    if (!videoRef.current) return null;
+                    
+                    const videoRect = videoRef.current.getBoundingClientRect();
+                    const videoWidth = videoRef.current.videoWidth || 640;
+                    const videoHeight = videoRef.current.videoHeight || 480;
+                    
+                    const scaleX = videoRect.width / videoWidth;
+                    const scaleY = videoRect.height / videoHeight;
+                    
+                    const [x1, y1, x2, y2] = product.bbox;
+                    const left = x1 * scaleX;
+                    const top = y1 * scaleY;
+                    const width = (x2 - x1) * scaleX;
+                    const height = (y2 - y1) * scaleY;
+                    
+                    return (
+                      <div
+                        key={`product-${index}`}
+                        className="absolute border-2 border-green-400 bg-green-400/10"
+                        style={{
+                          left: `${left}px`,
+                          top: `${top}px`,
+                          width: `${width}px`,
+                          height: `${height}px`,
+                        }}
+                      >
+                        <div className="absolute -top-12 left-0 bg-green-500 text-white text-xs px-2 py-1 rounded max-w-48">
+                          <div className="font-semibold">{product.product_name}</div>
+                          <div>${product.price} ({Math.round(product.similarity_score * 100)}%)</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
                 
                 <div className="absolute top-4 left-4 flex items-center gap-2">
                   <span className="relative flex h-3 w-3">
@@ -349,15 +658,39 @@ const LiveStreamSeller = () => {
                     <span className="text-sm font-medium">{stats.viewers}</span>
                   </div>
                   {isProcessingFrame && (
-                    <div className="bg-blue-500/80 text-white px-3 py-1.5 rounded-lg backdrop-blur-sm">
+                    <div className="bg-purple-500/80 text-white px-3 py-1.5 rounded-lg backdrop-blur-sm">
                       <span className="text-xs font-medium">AI Processing...</span>
+                    </div>
+                  )}
+                  {detectedObjects.length > 0 && (
+                    <div className="bg-blue-500/80 text-white px-3 py-1.5 rounded-lg backdrop-blur-sm">
+                      <span className="text-xs font-medium">{detectedObjects.length} Objects</span>
                     </div>
                   )}
                   {detectedProducts.length > 0 && (
                     <div className="bg-green-500/80 text-white px-3 py-1.5 rounded-lg backdrop-blur-sm">
-                      <span className="text-xs font-medium">{detectedProducts.length} Products Detected</span>
+                      <span className="text-xs font-medium">{detectedProducts.length} Products</span>
                     </div>
                   )}
+                </div>
+
+                {/* Floating Reactions */}
+                <div className="absolute inset-0 pointer-events-none overflow-hidden">
+                  <AnimatePresence>
+                    {reactions.map((reaction) => (
+                      <motion.div
+                        key={reaction.id}
+                        className="absolute bottom-20 text-4xl"
+                        style={{ left: `${reaction.x}%` }}
+                        initial={{ opacity: 1, y: 0, scale: 0.8 }}
+                        animate={{ opacity: 0, y: -200, scale: 1.2 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 3, ease: "easeOut" }}
+                      >
+                        {reaction.emoji}
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
                 </div>
 
                 <div className="absolute bottom-4 left-4 right-4 flex justify-between items-end">
@@ -366,6 +699,15 @@ const LiveStreamSeller = () => {
                     <p className="text-sm opacity-80">Featuring our latest products</p>
                   </div>
                   <div className="flex items-center gap-3">
+                    {streamSource === 'camera' && (
+                      <button
+                        onClick={switchCamera}
+                        className="p-2.5 rounded-full bg-black/30 text-white hover:bg-black/50 transition-colors"
+                        title="Switch Camera"
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                      </button>
+                    )}
                     <button
                       onClick={endStream}
                       className="px-6 py-2.5 rounded-full bg-red-500 text-white font-bold flex items-center gap-2 hover:bg-red-700 transition-colors"
@@ -375,6 +717,47 @@ const LiveStreamSeller = () => {
                   </div>
                 </div>
               </>
+            )}
+            
+            {/* Stream Source Selection Modal */}
+            {showSourceModal && (
+              <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-sm w-full mx-4">
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4 text-center">
+                    Choose Stream Source
+                  </h3>
+                  <div className="space-y-3">
+                    <button
+                      onClick={() => startStreamWithSource('camera')}
+                      className="w-full flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+                    >
+                      <Video className="w-6 h-6 text-blue-500" />
+                      <div className="text-left">
+                        <div className="font-medium text-gray-900 dark:text-white">Camera</div>
+                        <div className="text-sm text-gray-500 dark:text-gray-400">Use device camera</div>
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => startStreamWithSource('screen')}
+                      className="w-full flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+                    >
+                      <div className="w-6 h-6 bg-green-500 rounded flex items-center justify-center">
+                        <div className="w-4 h-3 bg-white rounded-sm"></div>
+                      </div>
+                      <div className="text-left">
+                        <div className="font-medium text-gray-900 dark:text-white">Screen Share</div>
+                        <div className="text-sm text-gray-500 dark:text-gray-400">Share your screen</div>
+                      </div>
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => setShowSourceModal(false)}
+                    className="w-full mt-4 py-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
             )}
           </div>
 

@@ -24,13 +24,14 @@ def check_pytorch():
         print(f"GPU count: {torch.cuda.device_count()}")
 
 def init_yolo_model():
-    """Initialize YOLO model for object detection"""
+    """Initialize YOLO11 model for object detection"""
     try:
-        model = YOLO('yolov8n.pt')
-        print("YOLO model loaded successfully")
+        model = YOLO('yolo11n.pt')
+        model.fuse()  # Optimize for inference
+        print("YOLO11 model loaded successfully")
         return model
     except Exception as e:
-        print(f"Error loading YOLO model: {e}")
+        print(f"Error loading YOLO11 model: {e}")
         return None
 
 def init_clip_model():

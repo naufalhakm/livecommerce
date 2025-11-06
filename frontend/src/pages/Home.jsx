@@ -1,4 +1,3 @@
-import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, Video, Check, Tv } from 'lucide-react';
 
@@ -21,7 +20,7 @@ const Home = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Viewer Card */}
           <div 
-            onClick={() => navigate('/viewer')}
+            onClick={() => navigate('/streams')}
             className="bg-gray-800 rounded-2xl p-8 border-2 border-gray-700 hover:border-red-500 cursor-pointer transition-all hover:scale-105"
           >
             <div className="text-center">
@@ -29,7 +28,7 @@ const Home = () => {
                 <User className="w-10 h-10 text-red-500" />
               </div>
               <h2 className="text-white text-2xl font-bold mb-2">Join as Viewer</h2>
-              <p className="text-gray-400 mb-6">Watch live streams and shop products in real-time</p>
+              <p className="text-gray-400 mb-6">Browse active live streams and join shopping sessions</p>
               <div className="space-y-2 text-left text-sm text-gray-400">
                 <div className="flex items-center gap-2">
                   <Check className="w-4 h-4 text-green-500" />

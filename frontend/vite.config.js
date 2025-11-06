@@ -5,21 +5,19 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: '0.0.0.0',
-    port: 3000
-  },
-  define: {
-    global: 'globalThis',
-    'process.env': {}
-  },
-  optimizeDeps: {
-    include: ['simple-peer']
+    port: 3000,
+    allowedHosts: [
+      'livecomerce.laidtechnology.tech',
+      'localhost',
+      '127.0.0.1'
+    ],
+    hmr: {
+      port: 3000,
+      host: process.env.NODE_ENV === 'production' ? 'livecomerce.laidtechnology.tech' : 'localhost'
+    }
   },
   build: {
-    target: 'es2015',
-    rollupOptions: {
-      output: {
-        manualChunks: undefined
-      }
-    }
+    outDir: 'dist',
+    sourcemap: false
   }
 })

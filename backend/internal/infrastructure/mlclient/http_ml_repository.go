@@ -1,47 +1,31 @@
-package services
+package mlclient
 
 import (
 	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"live-shopping-ai/backend/internal/domain/entities"
+	"live-shopping-ai/backend/internal/domain/repositories"
 	"mime/multipart"
 	"net/http"
 	"os"
 )
 
-type MLClient struct {
-	BaseURL string
+type httpMLRepository struct {
+	baseURL string
 }
 
-type PredictionResponse struct {
-	Predictions []struct {
-		BBox            []int   `json:"bbox"`
-		ProductID       string  `json:"product_id"`
-		ProductName     string  `json:"product_name"`
-		Price           float64 `json:"price"`
-		Confidence      float64 `json:"confidence"`
-		SimilarityScore float64 `json:"similarity_score"`
-	} `json:"predictions"`
-}
-
-type TrainingResponse struct {
-	SellerID         string `json:"seller_id"`
-	TotalEmbeddings  int    `json:"total_embeddings"`
-	UniqueProducts   int    `json:"unique_products"`
-	Status           string `json:"status"`
-}
-
-func NewMLClient() *MLClient {
+func NewHttpMLRepository() repositories.MLRepository {
 	baseURL := os.Getenv("ML_SERVICE_URL")
 	if baseURL == "" {
 		baseURL = "http://ml_service:8001"
 	}
-	return &MLClient{BaseURL: baseURL}
+	return &httpMLRepository{baseURL: baseURL}
 }
 
-func (c *MLClient) TrainModel(sellerID string) (*TrainingResponse, error) {
-	url := fmt.Sprintf("%s/train?seller_id=%s", c.BaseURL, sellerID)
+func (r *httpMLRepository) TrainModel(sellerID string) (*entities.TrainingResponse, error) {
+	url := fmt.Sprintf("%s/train?seller_id=%s", r.baseURL, sellerID)
 	
 	resp, err := http.Post(url, "application/json", nil)
 	if err != nil {
@@ -53,7 +37,7 @@ func (c *MLClient) TrainModel(sellerID string) (*TrainingResponse, error) {
 		return nil, fmt.Errorf("ML service returned status: %d", resp.StatusCode)
 	}
 
-	var result TrainingResponse
+	var result entities.TrainingResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
@@ -61,14 +45,11 @@ func (c *MLClient) TrainModel(sellerID string) (*TrainingResponse, error) {
 	return &result, nil
 }
 
-func (c *MLClient) PredictProduct(sellerID string, imageData []byte) (*PredictionResponse, error) {
+func (r *httpMLRepository) PredictProduct(sellerID string, imageData []byte) (*entities.PredictionResponse, error) {
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
 
-	// Add seller_id field
 	writer.WriteField("seller_id", sellerID)
-
-	// Add file field
 	part, err := writer.CreateFormFile("file", "image.jpg")
 	if err != nil {
 		return nil, err
@@ -76,7 +57,7 @@ func (c *MLClient) PredictProduct(sellerID string, imageData []byte) (*Predictio
 	part.Write(imageData)
 	writer.Close()
 
-	url := fmt.Sprintf("%s/predict", c.BaseURL)
+	url := fmt.Sprintf("%s/predict", r.baseURL)
 	req, err := http.NewRequest("POST", url, &buf)
 	if err != nil {
 		return nil, err
@@ -95,7 +76,7 @@ func (c *MLClient) PredictProduct(sellerID string, imageData []byte) (*Predictio
 		return nil, fmt.Errorf("ML service returned status: %d, body: %s", resp.StatusCode, string(body))
 	}
 
-	var result PredictionResponse
+	var result entities.PredictionResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
@@ -103,8 +84,8 @@ func (c *MLClient) PredictProduct(sellerID string, imageData []byte) (*Predictio
 	return &result, nil
 }
 
-func (c *MLClient) GetTrainingStatus(sellerID string) (map[string]interface{}, error) {
-	url := fmt.Sprintf("%s/training-status/%s", c.BaseURL, sellerID)
+func (r *httpMLRepository) GetTrainingStatus(sellerID string) (map[string]interface{}, error) {
+	url := fmt.Sprintf("%s/training-status/%s", r.baseURL, sellerID)
 	
 	resp, err := http.Get(url)
 	if err != nil {
@@ -122,4 +103,8 @@ func (c *MLClient) GetTrainingStatus(sellerID string) (map[string]interface{}, e
 	}
 
 	return result, nil
+}
+
+func (r *httpMLRepository) ProcessStreamFrame(sellerID string, imageData []byte) (*entities.PredictionResponse, error) {
+	return r.PredictProduct(sellerID, imageData)
 }

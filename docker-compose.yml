@@ -14,11 +14,15 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - BACKEND_URL=http://backend:8080
+    networks:
+      - app-network
 
   backend:
     build: ./backend
     ports:
       - "8080:8080"
+    networks:
+      - app-network
     environment:
       - DATABASE_URL=postgresql://postgres.aoefomhdatzkcsuowqmb:DFSiOWif2PCjd4X3@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require
       - SUPABASE_URL=https://aoefomhdatzkcsuowqmb.supabase.co
@@ -29,12 +33,19 @@ services:
   frontend:
     build: ./frontend
     ports:
-      - "3000:3000"
+      - "3000:80"
     environment:
-      - VITE_API_URL=http://localhost:8080
-      - VITE_WS_URL=ws://localhost:8080
+      - NODE_ENV=production
+      - VITE_API_URL=https://livecomerce.laidtechnology.tech
+      - VITE_WS_URL=wss://livecomerce.laidtechnology.tech
     depends_on:
       - backend
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
 
 volumes:
   postgres_data:

@@ -32,7 +32,6 @@ const EditProduct = () => {
       });
       setExistingImages(product.images || []);
     } catch (error) {
-      console.error('Error loading product:', error);
       navigate('/admin');
     }
   };
@@ -84,7 +83,6 @@ const EditProduct = () => {
 
       navigate('/admin');
     } catch (error) {
-      console.error('Error updating product:', error);
       alert('Failed to update product');
     } finally {
       setLoading(false);

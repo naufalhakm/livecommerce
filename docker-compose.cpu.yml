@@ -31,8 +31,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - VITE_API_URL=http://159.65.7.56:8080
-      - VITE_WS_URL=ws://159.65.7.56:8080
+      - VITE_API_URL=https://livecomerce.laidtechnology.tech
+      - VITE_WS_URL=wss://livecomerce.laidtechnology.tech
     depends_on:
       - backend
 

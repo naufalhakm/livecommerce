@@ -31,49 +31,68 @@ class TrainerService:
             return []
     
     def crop_objects_from_image(self, image_data):
-        """Detect and crop objects from image using YOLO"""
+        """Detect and crop objects from image using YOLO11"""
         try:
             image = Image.open(io.BytesIO(image_data))
-            results = self.yolo_detector.model(image, conf=0.3)
             
-            # Product-related classes (exclude person=0)
+            # Use optimized YOLO11 detection
+            detections = self.yolo_detector.detect(
+                image, 
+                conf_threshold=self.config.YOLO_CONF_THRESHOLD,
+                iou_threshold=self.config.YOLO_IOU_THRESHOLD
+            )
+            
+            # Enhanced product classes for e-commerce
             product_classes = {
-                24: 'handbag', 39: 'bottle', 40: 'wine glass', 41: 'cup', 42: 'fork', 43: 'knife', 44: 'spoon', 45: 'bowl',
-                46: 'banana', 47: 'apple', 56: 'chair', 57: 'couch', 62: 'tv', 63: 'laptop', 64: 'mouse', 65: 'remote',
-                66: 'keyboard', 67: 'cell phone', 73: 'book', 74: 'clock', 75: 'vase', 76: 'scissors', 77: 'teddy bear'
+                # Electronics
+                62: 'tv', 63: 'laptop', 64: 'mouse', 65: 'remote', 66: 'keyboard', 67: 'cell phone',
+                # Fashion & Accessories
+                24: 'handbag', 25: 'tie', 26: 'suitcase',
+                # Kitchen & Dining
+                39: 'bottle', 40: 'wine glass', 41: 'cup', 42: 'fork', 43: 'knife', 44: 'spoon', 45: 'bowl',
+                68: 'microwave', 69: 'oven', 70: 'toaster', 72: 'refrigerator',
+                # Home & Garden
+                56: 'chair', 57: 'couch', 58: 'potted plant', 59: 'bed', 60: 'dining table',
+                73: 'book', 74: 'clock', 75: 'vase', 76: 'scissors', 77: 'teddy bear',
+                # Food Items
+                46: 'banana', 47: 'apple', 48: 'sandwich', 49: 'orange', 50: 'broccoli', 51: 'carrot',
+                52: 'hot dog', 53: 'pizza', 54: 'donut', 55: 'cake'
             }
             
             cropped_objects = []
-            for result in results:
-                boxes = result.boxes
-                if boxes is not None:
-                    for box in boxes:
-                        class_id = int(box.cls[0].cpu().numpy())
-                        confidence = box.conf[0].cpu().numpy()
-                        
-                        # Skip person class and low confidence
-                        if class_id == 0 or confidence < 0.4:
-                            continue
-                        
-                        x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-                        width = x2 - x1
-                        height = y2 - y1
-                        
-                        if width < 50 or height < 50:
-                            continue
-                        
-                        # Crop with padding
-                        padding = 10
-                        x1 = max(0, int(x1) - padding)
-                        y1 = max(0, int(y1) - padding)
-                        x2 = min(image.width, int(x2) + padding)
-                        y2 = min(image.height, int(y2) + padding)
-                        
-                        cropped = image.crop((x1, y1, x2, y2))
-                        
-                        img_byte_arr = io.BytesIO()
-                        cropped.save(img_byte_arr, format='JPEG')
-                        cropped_objects.append(img_byte_arr.getvalue())
+            for detection in detections:
+                class_id = detection['class_id']
+                confidence = detection['confidence']
+                
+                # Skip person class and focus on products
+                if class_id == 0 or class_id not in product_classes:
+                    continue
+                
+                x1, y1, x2, y2 = detection['bbox']
+                width, height = x2 - x1, y2 - y1
+                
+                # Enhanced size filtering
+                if width < self.config.MIN_OBJECT_SIZE or height < self.config.MIN_OBJECT_SIZE:
+                    continue
+                
+                # Smart padding based on object size
+                padding = max(5, min(20, int(min(width, height) * 0.1)))
+                x1 = max(0, x1 - padding)
+                y1 = max(0, y1 - padding)
+                x2 = min(image.width, x2 + padding)
+                y2 = min(image.height, y2 + padding)
+                
+                cropped = image.crop((x1, y1, x2, y2))
+                
+                # Resize if too large (optimize for CLIP)
+                if cropped.width > 512 or cropped.height > 512:
+                    cropped.thumbnail((512, 512), Image.Resampling.LANCZOS)
+                
+                img_byte_arr = io.BytesIO()
+                cropped.save(img_byte_arr, format='JPEG', quality=85, optimize=True)
+                cropped_objects.append(img_byte_arr.getvalue())
+                
+                logger.info(f"Cropped {product_classes[class_id]} (conf: {confidence:.2f})")
             
             return cropped_objects
         except Exception as e:
@@ -132,30 +151,27 @@ class TrainerService:
                             if response.status_code == 200:
                                 image_data = response.content
                                 
-                                # Crop objects using YOLO
-                                cropped_objects = self.crop_objects_from_image(image_data)
+                                # Always save original image for training
+                                filename = f"image_{i+1}.jpg"
+                                filepath = images_dir / filename
                                 
-                                if cropped_objects:
-                                    # Save each cropped object
-                                    for j, cropped_data in enumerate(cropped_objects):
-                                        filename = f"image_{i+1}_crop_{j+1}.jpg"
-                                        filepath = images_dir / filename
-                                        
-                                        with open(filepath, 'wb') as f:
-                                            f.write(cropped_data)
-                                        
-                                        total_images += 1
-                                        logger.info(f"Saved cropped: {seller_id}/{product['name']}/{filename}")
-                                else:
-                                    # Save original if no crops
-                                    filename = f"image_{i+1}.jpg"
-                                    filepath = images_dir / filename
+                                with open(filepath, 'wb') as f:
+                                    f.write(image_data)
+                                
+                                total_images += 1
+                                logger.info(f"Saved: {seller_id}/{product['name']}/{filename}")
+                                
+                                # Also try to crop objects using YOLO for additional training data
+                                cropped_objects = self.crop_objects_from_image(image_data)
+                                for j, cropped_data in enumerate(cropped_objects):
+                                    crop_filename = f"image_{i+1}_crop_{j+1}.jpg"
+                                    crop_filepath = images_dir / crop_filename
                                     
-                                    with open(filepath, 'wb') as f:
-                                        f.write(image_data)
+                                    with open(crop_filepath, 'wb') as f:
+                                        f.write(cropped_data)
                                     
                                     total_images += 1
-                                    logger.info(f"Saved original: {seller_id}/{product['name']}/{filename}")
+                                    logger.info(f"Saved crop: {seller_id}/{product['name']}/{crop_filename}")
                         
                         except Exception as e:
                             logger.error(f"Error processing image {image_url}: {e}")
@@ -187,16 +203,14 @@ class TrainerService:
     
     async def train_seller_model(self, seller_id: str):
         """Train model for seller using product_id structure"""
-        from main import training_status
-        
         seller_path = self.config.DATASETS_DIR / seller_id
         if not seller_path.exists():
             raise ValueError(f"Seller dataset not found: {seller_id}")
         
-        training_status[seller_id] = {"status": "training", "progress": 20, "message": "Processing images..."}
-        
         embeddings = []
         product_metadata = []
+        
+        logger.info(f"Training {seller_id}...")
         
         # Process each product folder
         for product_dir in seller_path.iterdir():
@@ -212,11 +226,14 @@ class TrainerService:
                 with open(metadata_file, 'r') as f:
                     metadata = json.load(f)
                 product_name = metadata.get("product_name", product_id)
+                price = metadata.get("price", 0.0)
             else:
                 product_name = product_id
+                price = 0.0
             
             # Process images
             if images_dir.exists():
+                image_count = 0
                 for img_file in images_dir.glob("*.jpg"):
                     try:
                         image = Image.open(img_file).convert('RGB')
@@ -225,20 +242,24 @@ class TrainerService:
                         product_metadata.append({
                             "product_id": product_id,
                             "product_name": product_name,
-                            "price": metadata.get("price", 0.0)
+                            "price": price
                         })
+                        image_count += 1
+                        logger.info(f"Processed {img_file.name} for {product_name}")
                     except Exception as e:
                         logger.error(f"Error processing {img_file}: {e}")
+                
+                logger.info(f"Product {product_name}: {image_count} images processed")
         
         if not embeddings:
-            raise ValueError("No valid images found for training")
+            raise ValueError(f"No valid images found for training {seller_id}")
         
-        # Save FAISS index
-        from main import training_status
-        training_status[seller_id] = {"status": "training", "progress": 80, "message": "Building FAISS index..."}
+        logger.info(f"Building FAISS index for {seller_id} with {len(embeddings)} embeddings...")
         
         embeddings_array = np.array(embeddings)
         self.faiss_index.save_seller_index(seller_id, embeddings_array, product_metadata)
+        
+        logger.info(f"Training completed for {seller_id}")
         
         return {
             "seller_id": seller_id,
@@ -263,17 +284,32 @@ class TrainerService:
         image = Image.open(io.BytesIO(image_data)).convert('RGB')
         logger.info(f"📷 Image size: {image.size}")
         
-        # YOLO detection
-        logger.info(f"🤖 Running YOLO detection")
-        detections = self.yolo_detector.detect(image)
-        logger.info(f"🎯 YOLO found {len(detections)} detections")
+        # YOLO11 optimized detection
+        logger.info(f"🤖 Running YOLO11 detection")
+        detections = self.yolo_detector.detect(
+            image,
+            conf_threshold=self.config.YOLO_CONF_THRESHOLD,
+            iou_threshold=self.config.YOLO_IOU_THRESHOLD
+        )
+        logger.info(f"🎯 YOLO11 found {len(detections)} detections")
         
         predictions = []
+        all_detections = []
+        
+        # Process YOLO detections (now returns structured data)
         for detection in detections:
-            x1, y1, x2, y2, conf = detection
+            # Skip person class for product detection
+            if detection.get('class_id') == 0:
+                continue
+                
+            bbox = detection['bbox']
+            x1, y1, x2, y2 = bbox
             
-            # Extract detected region
-            detected_region = image.crop((int(x1), int(y1), int(x2), int(y2)))
+            # Add to all detections for object tracking
+            all_detections.append(detection)
+            
+            # Extract detected region for product recognition
+            detected_region = image.crop((x1, y1, x2, y2))
             
             # Get embedding and search
             logger.info(f"🧪 Extracting CLIP embedding for detection {len(predictions)+1}")
@@ -282,19 +318,22 @@ class TrainerService:
             results = self.faiss_index.search(seller_id, embedding, k=1)
             logger.info(f"📊 FAISS results: {results}")
             
-            if results:
+            if results and results[0]["similarity_score"] > 0.7:  # Threshold for product match
                 result = results[0]
                 # Extract numeric product ID from product_X format
                 product_id_str = result["product_id"].replace("product_", "")
                 
                 predictions.append({
-                    "bbox": [int(x1), int(y1), int(x2), int(y2)],
+                    "bbox": bbox,
                     "product_id": product_id_str,
                     "product_name": result["product_name"],
                     "price": result.get("price", 0.0),
-                    "confidence": float(conf),
+                    "confidence": detection['confidence'],
                     "similarity_score": result["similarity_score"]
                 })
         
-        logger.info(f"✅ Final predictions: {len(predictions)} items")
-        return {"predictions": predictions}
+        logger.info(f"✅ Final predictions: {len(predictions)} items, detections: {len(all_detections)}")
+        return {
+            "predictions": predictions,
+            "detections": all_detections
+        }
