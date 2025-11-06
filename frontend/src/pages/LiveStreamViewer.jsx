@@ -275,7 +275,6 @@ const LiveStreamViewer = () => {
             price: productData.price,
             similarity_score: message.data.similarity_score
           });
-          console.log('📢 Showing notification for:', productData.name);
           
           // Hide notification after 4 seconds
           setTimeout(() => {
@@ -421,21 +420,6 @@ const LiveStreamViewer = () => {
         </div>
         <div className="flex items-center gap-4">
           <button 
-            onClick={() => {
-              console.log('🧪 Testing notification...');
-              setPinNotification({
-                id: Date.now(),
-                product_name: 'Test Product',
-                price: 100,
-                similarity_score: 0.85
-              });
-              setTimeout(() => setPinNotification(null), 4000);
-            }}
-            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium"
-          >
-            Test Notification
-          </button>
-          <button 
             onClick={() => navigate('/streams')}
             className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm font-medium"
           >
@@ -509,9 +493,9 @@ const LiveStreamViewer = () => {
                   animate={{ y: 0, opacity: 1 }}
                   exit={{ y: -100, opacity: 0 }}
                   transition={{ duration: 0.5, ease: "easeOut" }}
-                  className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 w-full max-w-sm px-4"
+                  className="absolute top-4 left-0 right-0 z-50 flex justify-center"
                 >
-                  <div className="bg-gray-800/95 backdrop-blur-sm text-white px-6 py-3 rounded-lg shadow-xl border border-gray-600/50 mx-auto">
+                  <div className="bg-gray-800/95 backdrop-blur-sm text-white px-6 py-3 rounded-lg shadow-xl border border-gray-600/50">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 bg-red-500/20 rounded-full flex items-center justify-center">
                         <Pin className="w-4 h-4 text-red-400" />
