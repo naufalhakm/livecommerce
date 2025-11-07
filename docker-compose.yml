@@ -11,6 +11,8 @@ services:
       - ./datasets:/app/datasets
       - ./embeddings:/app/embeddings
       - ./models:/app/models
+      - ./ml_service/experiment_logs:/app/experiment_logs
+      - ./ml_service/thesis_results:/app/thesis_results
     environment:
       - PYTHONUNBUFFERED=1
       - BACKEND_URL=http://backend:8080

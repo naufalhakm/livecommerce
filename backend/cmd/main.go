@@ -28,18 +28,22 @@ func main() {
 	mlRepo := mlclient.NewHttpMLRepository()
 	storageRepo := storage.NewStorageService()
 	webrtcRepo := webrtc.NewMemoryWebRTCRepository()
+	mlMetricsRepo := mlclient.NewMLMetricsRepository()
 
 	productService := services.NewProductService(productRepo, pinnedRepo, mlRepo, storageRepo)
 	webrtcService := services.NewWebRTCService(webrtcRepo, liveStreamRepo)
 	streamService := services.NewStreamService(mlRepo, pinnedRepo)
 	liveStreamService := services.NewLiveStreamService(liveStreamRepo)
+	metricsService := services.NewMetricsService(mlMetricsRepo)
 
 	productHandler := handlers.NewProductHandler(productService)
 	webrtcHandler := handlers.NewWebRTCHandler(webrtcService)
 	streamHandler := handlers.NewStreamHandler(streamService)
 	liveStreamHandler := handlers.NewLiveStreamHandler(liveStreamService)
+	metricsHandler := handlers.NewMetricsHandler(metricsService)
+	exportHandler := handlers.NewExportHandler(metricsService)
 
-	router := setupRouter(productHandler, webrtcHandler, streamHandler, liveStreamHandler)
+	router := setupRouter(productHandler, webrtcHandler, streamHandler, liveStreamHandler, metricsHandler, exportHandler)
 
 	log.Fatal(http.ListenAndServe(":8080", router))
 }
@@ -49,6 +53,8 @@ func setupRouter(
 	webrtcHandler *handlers.WebRTCHandler,
 	streamHandler *handlers.StreamHandler,
 	liveStreamHandler *handlers.LiveStreamHandler,
+	metricsHandler *handlers.MetricsHandler,
+	exportHandler *handlers.ExportHandler,
 ) *gin.Engine {
 	r := gin.Default()
 
@@ -69,6 +75,8 @@ func setupRouter(
 	routes.RegisterWebRTCRoutes(r, webrtcHandler)
 	routes.RegisterStreamRoutes(r, streamHandler)
 	routes.SetupLiveStreamRoutes(r, liveStreamHandler)
+	routes.SetupMetricsRoutes(r, metricsHandler)
+	routes.SetupExportRoutes(r, exportHandler)
 
 	r.Static("/uploads", "./uploads")
 

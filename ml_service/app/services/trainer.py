@@ -269,7 +269,9 @@ class TrainerService:
         }
     
     async def detect_products(self, seller_id: str, image_data: bytes):
-        """Detect products in image"""
+        """Detect products in image with timing metrics"""
+        import time
+        
         logger.info(f"🔍 DETECT_PRODUCTS: seller_id={seller_id}")
         logger.info(f"📊 Available indices: {list(self.faiss_index.seller_indices.keys())}")
         
@@ -284,17 +286,20 @@ class TrainerService:
         image = Image.open(io.BytesIO(image_data)).convert('RGB')
         logger.info(f"📷 Image size: {image.size}")
         
-        # YOLO11 optimized detection
+        # YOLO11 optimized detection with timing
         logger.info(f"🤖 Running YOLO11 detection")
+        yolo_start = time.time()
         detections = self.yolo_detector.detect(
             image,
             conf_threshold=self.config.YOLO_CONF_THRESHOLD,
             iou_threshold=self.config.YOLO_IOU_THRESHOLD
         )
-        logger.info(f"🎯 YOLO11 found {len(detections)} detections")
+        yolo_time = time.time() - yolo_start
+        logger.info(f"🎯 YOLO11 found {len(detections)} detections in {yolo_time:.3f}s")
         
         predictions = []
         all_detections = []
+        clip_total_time = 0
         
         # Process YOLO detections (now returns structured data)
         for detection in detections:
@@ -311,12 +316,15 @@ class TrainerService:
             # Extract detected region for product recognition
             detected_region = image.crop((x1, y1, x2, y2))
             
-            # Get embedding and search
+            # Get embedding and search with timing
             logger.info(f"🧪 Extracting CLIP embedding for detection {len(predictions)+1}")
+            clip_start = time.time()
             embedding = self.clip_extractor.extract_embedding(detected_region)
             logger.info(f"🔍 Searching FAISS index for {seller_id}")
             results = self.faiss_index.search(seller_id, embedding, k=1)
-            logger.info(f"📊 FAISS results: {results}")
+            clip_time = time.time() - clip_start
+            clip_total_time += clip_time
+            logger.info(f"📊 FAISS results: {results} (took {clip_time:.3f}s)")
             
             if results and results[0]["similarity_score"] > 0.7:  # Threshold for product match
                 result = results[0]
@@ -335,5 +343,7 @@ class TrainerService:
         logger.info(f"✅ Final predictions: {len(predictions)} items, detections: {len(all_detections)}")
         return {
             "predictions": predictions,
-            "detections": all_detections
+            "detections": all_detections,
+            "yolo_time": yolo_time,
+            "clip_time": clip_total_time / max(len(all_detections), 1)  # Average CLIP time per detection
         }
