@@ -56,21 +56,12 @@ def crop_objects_from_image(image_data, yolo_model):
         
         # Product-related classes (exclude person=0)
         product_classes = {
-            # Electronics & Gadgets
-            62: 'tv', 63: 'laptop', 64: 'mouse', 65: 'remote', 66: 'keyboard', 67: 'cell phone',
+            # Electronics
+            63: 'laptop', 64: 'mouse', 66: 'keyboard', 67: 'cell phone',
             # Kitchen & Dining
-            39: 'bottle', 40: 'wine glass', 41: 'cup', 42: 'fork', 43: 'knife', 44: 'spoon', 45: 'bowl',
-            68: 'microwave', 69: 'oven', 70: 'toaster', 71: 'sink', 72: 'refrigerator',
-            # Food Items
-            46: 'banana', 47: 'apple', 48: 'sandwich', 49: 'orange', 50: 'broccoli', 51: 'carrot',
-            52: 'hot dog', 53: 'pizza', 54: 'donut', 55: 'cake',
-            # Furniture & Home
-            56: 'chair', 57: 'couch', 58: 'potted plant', 59: 'bed', 60: 'dining table',
-            # Personal Items
-            73: 'book', 74: 'clock', 75: 'vase', 76: 'scissors', 77: 'teddy bear',
-            78: 'hair drier', 79: 'toothbrush',
-            # Fashion & Accessories (if detected as general objects)
-            24: 'handbag', 25: 'tie', 26: 'suitcase'
+            39: 'bottle', 40: 'wine glass', 41: 'cup',
+            # Home & Garden
+            73: 'book',
         }
         
         cropped_objects = []

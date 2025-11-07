@@ -45,18 +45,11 @@ class TrainerService:
             # Enhanced product classes for e-commerce
             product_classes = {
                 # Electronics
-                62: 'tv', 63: 'laptop', 64: 'mouse', 65: 'remote', 66: 'keyboard', 67: 'cell phone',
-                # Fashion & Accessories
-                24: 'handbag', 25: 'tie', 26: 'suitcase',
+                63: 'laptop', 64: 'mouse', 66: 'keyboard', 67: 'cell phone',
                 # Kitchen & Dining
-                39: 'bottle', 40: 'wine glass', 41: 'cup', 42: 'fork', 43: 'knife', 44: 'spoon', 45: 'bowl',
-                68: 'microwave', 69: 'oven', 70: 'toaster', 72: 'refrigerator',
+                39: 'bottle', 40: 'wine glass', 41: 'cup',
                 # Home & Garden
-                56: 'chair', 57: 'couch', 58: 'potted plant', 59: 'bed', 60: 'dining table',
-                73: 'book', 74: 'clock', 75: 'vase', 76: 'scissors', 77: 'teddy bear',
-                # Food Items
-                46: 'banana', 47: 'apple', 48: 'sandwich', 49: 'orange', 50: 'broccoli', 51: 'carrot',
-                52: 'hot dog', 53: 'pizza', 54: 'donut', 55: 'cake'
+                73: 'book',
             }
             
             cropped_objects = []
