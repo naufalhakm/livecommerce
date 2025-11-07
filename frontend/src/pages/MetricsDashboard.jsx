@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
+import { ArrowLeft, BarChart3, Download, GraduationCap, Activity, Cpu, Zap, Database } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -26,6 +28,7 @@ ChartJS.register(
 );
 
 const MetricsDashboard = () => {
+  const navigate = useNavigate();
   const [metricsData, setMetricsData] = useState(null);
   const [thesisData, setThesisData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -104,8 +107,8 @@ const MetricsDashboard = () => {
         thesisData.yolo_performance.f1_score * 100,
         thesisData.yolo_performance.map_05 * 100
       ] : [],
-      backgroundColor: ['#3B82F6', '#10B981', '#F59E0B', '#EF4444'],
-      borderColor: ['#2563EB', '#059669', '#D97706', '#DC2626'],
+      backgroundColor: ['#EF4444', '#10B981', '#F59E0B', '#6B7280'],
+      borderColor: ['#DC2626', '#059669', '#D97706', '#4B5563'],
       borderWidth: 2
     }]
   };
@@ -119,8 +122,8 @@ const MetricsDashboard = () => {
         thesisData.clip_performance.top3_accuracy * 100,
         thesisData.clip_performance.top5_accuracy * 100
       ] : [],
-      backgroundColor: '#8B5CF6',
-      borderColor: '#7C3AED',
+      backgroundColor: '#EF4444',
+      borderColor: '#DC2626',
       borderWidth: 2
     }]
   };
@@ -135,7 +138,7 @@ const MetricsDashboard = () => {
         thesisData.latency_breakdown.faiss_search_ms,
         thesisData.latency_breakdown.overhead_ms
       ] : [],
-      backgroundColor: ['#F59E0B', '#10B981', '#3B82F6', '#EF4444'],
+      backgroundColor: ['#EF4444', '#10B981', '#F59E0B', '#6B7280'],
     }]
   };
 
@@ -185,59 +188,91 @@ const MetricsDashboard = () => {
   return (
     <div className="min-h-screen bg-gray-900 text-white p-6">
       <div className="max-w-7xl mx-auto">
+        {/* Header with back button */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">Dashboard Metriks Skripsi</h1>
-          <p className="text-gray-400">Prototipe Asisten Belanja Siaran Langsung Berbasis YOLO, CLIP dan FAISS</p>
+          <div className="flex items-center gap-4 mb-4">
+            <button 
+              onClick={() => navigate('/')}
+              className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5" />
+              <span>Back to Home</span>
+            </button>
+          </div>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-12 h-12 bg-red-500 rounded-lg flex items-center justify-center">
+              <BarChart3 className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold">Thesis Metrics Dashboard</h1>
+              <p className="text-gray-400">Prototipe Asisten Belanja Siaran Langsung Berbasis YOLO, CLIP dan FAISS</p>
+            </div>
+          </div>
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex space-x-4 mb-8">
-          {['overview', 'yolo', 'clip', 'system', 'thesis'].map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-4 py-2 rounded-lg font-medium ${
-                activeTab === tab
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-              }`}
-            >
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
-            </button>
-          ))}
+        <div className="flex flex-wrap gap-2 mb-8">
+          {[
+            { key: 'overview', label: 'Overview', icon: Activity },
+            { key: 'yolo', label: 'YOLO', icon: Zap },
+            { key: 'clip', label: 'CLIP', icon: Database },
+            { key: 'system', label: 'System', icon: Cpu },
+            { key: 'thesis', label: 'Thesis', icon: GraduationCap }
+          ].map((tab) => {
+            const IconComponent = tab.icon;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                  activeTab === tab.key
+                    ? 'bg-red-500 text-white'
+                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700 border border-gray-700'
+                }`}
+              >
+                <IconComponent className="w-4 h-4" />
+                {tab.label}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Download Buttons */}
-        <div className="mb-8 flex space-x-4">
+        {/* Action Buttons */}
+        <div className="mb-8 flex flex-wrap gap-3">
           <button
             onClick={() => downloadCSV('yolo')}
-            className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg"
+            className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 px-4 py-2 rounded-lg transition-colors"
           >
-            Download YOLO Data
+            <Download className="w-4 h-4" />
+            YOLO Data
           </button>
           <button
             onClick={() => downloadCSV('clip')}
-            className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-lg"
+            className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 px-4 py-2 rounded-lg transition-colors"
           >
-            Download CLIP Data
+            <Download className="w-4 h-4" />
+            CLIP Data
           </button>
           <button
             onClick={() => downloadCSV('system')}
-            className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg"
+            className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 px-4 py-2 rounded-lg transition-colors"
           >
-            Download System Data
+            <Download className="w-4 h-4" />
+            System Data
           </button>
           <button
             onClick={() => downloadCSV('all')}
-            className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg"
+            className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 px-4 py-2 rounded-lg transition-colors"
           >
-            Download All Data
+            <Download className="w-4 h-4" />
+            All Data
           </button>
           <button
             onClick={generateThesisResults}
-            className="bg-yellow-600 hover:bg-yellow-700 px-4 py-2 rounded-lg font-semibold"
+            className="flex items-center gap-2 bg-red-500 hover:bg-red-600 px-4 py-2 rounded-lg font-semibold transition-colors"
           >
-            🎓 Generate Thesis Results
+            <GraduationCap className="w-4 h-4" />
+            Generate Thesis Results
           </button>
         </div>
 
@@ -246,25 +281,25 @@ const MetricsDashboard = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <div className="bg-gray-800 p-6 rounded-lg">
               <h3 className="text-lg font-semibold mb-2">Total Frames</h3>
-              <p className="text-3xl font-bold text-blue-400">
+              <p className="text-3xl font-bold text-red-400">
                 {metricsData?.summary?.total_frames_processed || 0}
               </p>
             </div>
             <div className="bg-gray-800 p-6 rounded-lg">
               <h3 className="text-lg font-semibold mb-2">Avg YOLO Latency</h3>
-              <p className="text-3xl font-bold text-green-400">
+              <p className="text-3xl font-bold text-red-400">
                 {metricsData?.summary?.avg_yolo_latency_ms?.toFixed(1) || 0}ms
               </p>
             </div>
             <div className="bg-gray-800 p-6 rounded-lg">
               <h3 className="text-lg font-semibold mb-2">CLIP Top-1 Acc</h3>
-              <p className="text-3xl font-bold text-purple-400">
+              <p className="text-3xl font-bold text-red-400">
                 {((metricsData?.summary?.clip_top1_accuracy || 0) * 100).toFixed(1)}%
               </p>
             </div>
             <div className="bg-gray-800 p-6 rounded-lg">
               <h3 className="text-lg font-semibold mb-2">System Latency</h3>
-              <p className="text-3xl font-bold text-yellow-400">
+              <p className="text-3xl font-bold text-red-400">
                 {metricsData?.summary?.avg_system_latency_ms?.toFixed(1) || 0}ms
               </p>
             </div>
@@ -287,7 +322,7 @@ const MetricsDashboard = () => {
                       <div className="flex items-center space-x-2">
                         <div className="w-32 bg-gray-700 rounded-full h-2">
                           <div 
-                            className="bg-blue-500 h-2 rounded-full" 
+                            className="bg-red-500 h-2 rounded-full" 
                             style={{width: `${cat.ap_05 * 100}%`}}
                           ></div>
                         </div>

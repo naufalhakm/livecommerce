@@ -84,9 +84,9 @@ const Home = () => {
           </button>
           <button 
             onClick={() => navigate('/metrics')}
-            className="text-blue-400 hover:text-blue-300 text-sm font-semibold"
+            className="text-gray-400 hover:text-white text-sm"
           >
-            📊 Thesis Metrics →
+            Thesis Metrics →
           </button>
         </div>
       </div>
