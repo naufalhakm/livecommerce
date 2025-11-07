@@ -84,4 +84,19 @@ export const pinAPI = {
   getPinnedProducts: (sellerId) => api.get(`/products/pinned/${sellerId}`)
 };
 
+export const metricsAPI = {
+  getMetrics: () => api.get('/metrics/'),
+  getThesisData: () => api.get('/metrics/thesis'),
+  downloadCSV: (type) => {
+    const url = `${API_BASE_URL}/api/metrics/download?type=${type}`;
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${type}_metrics.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  },
+  generateThesisResults: () => api.post('/export/thesis-results')
+};
+
 export default api;

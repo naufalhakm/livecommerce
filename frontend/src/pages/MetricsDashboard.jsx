@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
 import { ArrowLeft, BarChart3, Download, GraduationCap, Activity, Cpu, Zap, Database } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { metricsAPI } from '../services/api';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -41,9 +42,8 @@ const MetricsDashboard = () => {
 
   const fetchMetricsData = async () => {
     try {
-      const response = await fetch('http://backend:8080/api/metrics/');
-      const data = await response.json();
-      setMetricsData(data);
+      const response = await metricsAPI.getMetrics();
+      setMetricsData(response.data);
     } catch (error) {
       console.error('Error fetching metrics:', error);
     }
@@ -51,9 +51,8 @@ const MetricsDashboard = () => {
 
   const fetchThesisData = async () => {
     try {
-      const response = await fetch('http://backend:8080/api/metrics/thesis');
-      const data = await response.json();
-      setThesisData(data);
+      const response = await metricsAPI.getThesisData();
+      setThesisData(response.data);
       setLoading(false);
     } catch (error) {
       console.error('Error fetching thesis data:', error);
@@ -62,27 +61,15 @@ const MetricsDashboard = () => {
   };
 
   const downloadCSV = (type) => {
-    const url = `http://backend:8080/api/metrics/download?type=${type}`;
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${type}_metrics.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    metricsAPI.downloadCSV(type);
   };
 
   const generateThesisResults = async () => {
     try {
-      const response = await fetch('http://backend:8080/api/export/thesis-results', {
-        method: 'POST'
-      });
-      const result = await response.json();
+      const response = await metricsAPI.generateThesisResults();
+      const result = response.data;
       
-      if (response.ok) {
-        alert(`🎓 Thesis results generated successfully!\n\nFiles created:\n${result.files.join('\n')}\n\nLocation: ${result.location}`);
-      } else {
-        alert('Failed to generate thesis results');
-      }
+      alert(`🎓 Thesis results generated successfully!\n\nFiles created:\n${result.files?.join('\n') || 'Charts and analysis'}\n\nLocation: ${result.location || 'thesis_results/'}`);
     } catch (error) {
       console.error('Error generating thesis results:', error);
       alert('Error generating thesis results');
