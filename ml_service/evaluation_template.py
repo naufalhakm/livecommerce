@@ -1,5 +1,7 @@
 import json
 import pandas as pd
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend for server
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np

@@ -275,10 +275,11 @@ async def generate_thesis_results():
         
         # Run evaluation script
         result = subprocess.run(
-            ['python', 'evaluation_template.py'],
+            ['python3', 'evaluation_template.py'],
             capture_output=True,
             text=True,
-            cwd='/app'
+            cwd='/app',
+            env={**os.environ, 'MPLBACKEND': 'Agg'}
         )
         
         if result.returncode == 0:

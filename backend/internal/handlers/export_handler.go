@@ -78,25 +78,28 @@ func (h *ExportHandler) GenerateThesisResults(c *gin.Context) {
 	jsonData, _ := json.MarshalIndent(evaluationResults, "", "  ")
 	os.WriteFile(jsonFile, jsonData, 0644)
 
-	// Create placeholder chart files (frontend will generate actual charts)
-	chartFiles := []string{
+	// Check which files actually exist in thesis_results directory
+	generatedFiles := []string{}
+	possibleFiles := []string{
 		"yolo_performance.png",
-		"clip_performance.png", 
-		"faiss_performance.png",
+		"clip_performance.png",
 		"system_performance.png",
-		"user_experience.png",
+		"performance_comparison.png",
+		"statistical_analysis.json",
+		"complete_evaluation_results.json",
 	}
-
-	for _, chartFile := range chartFiles {
-		placeholderPath := filepath.Join(resultsDir, chartFile)
-		placeholderContent := "# Chart placeholder - Generate from frontend dashboard\n"
-		os.WriteFile(placeholderPath, []byte(placeholderContent), 0644)
+	
+	for _, filename := range possibleFiles {
+		filePath := filepath.Join("thesis_results", filename)
+		if _, err := os.Stat(filePath); err == nil {
+			generatedFiles = append(generatedFiles, filename)
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Thesis results generated successfully",
 		"location": resultsDir,
-		"files": append(chartFiles, "complete_evaluation_results.json"),
+		"files": generatedFiles,
 		"evaluation_summary": evaluationResults,
 	})
 }
