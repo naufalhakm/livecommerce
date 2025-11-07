@@ -75,12 +75,18 @@ const Home = () => {
           </div>
         </div>
 
-        <div className="text-center mt-8">
+        <div className="text-center mt-8 space-x-4">
           <button 
             onClick={() => navigate('/admin')}
             className="text-gray-400 hover:text-white text-sm"
           >
             Admin Dashboard →
+          </button>
+          <button 
+            onClick={() => navigate('/metrics')}
+            className="text-blue-400 hover:text-blue-300 text-sm font-semibold"
+          >
+            📊 Thesis Metrics →
           </button>
         </div>
       </div>
