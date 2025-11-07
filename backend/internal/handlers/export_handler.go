@@ -90,7 +90,7 @@ func (h *ExportHandler) GenerateThesisResults(c *gin.Context) {
 	}
 	
 	for _, filename := range possibleFiles {
-		filePath := filepath.Join("thesis_results", filename)
+		filePath := filepath.Join("/app/thesis_results", filename)
 		if _, err := os.Stat(filePath); err == nil {
 			generatedFiles = append(generatedFiles, filename)
 		}
@@ -106,7 +106,7 @@ func (h *ExportHandler) GenerateThesisResults(c *gin.Context) {
 
 func (h *ExportHandler) DownloadThesisFile(c *gin.Context) {
 	filename := c.Param("filename")
-	filePath := filepath.Join("thesis_results", filename)
+	filePath := filepath.Join("/app/thesis_results", filename)
 	
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "File not found"})

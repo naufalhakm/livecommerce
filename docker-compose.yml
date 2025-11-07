@@ -23,6 +23,8 @@ services:
     build: ./backend
     ports:
       - "8080:8080"
+    volumes:
+      - ./ml_service/thesis_results:/app/thesis_results
     networks:
       - app-network
     environment:
