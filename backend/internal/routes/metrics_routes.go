@@ -25,6 +25,7 @@ func SetupExportRoutes(router *gin.Engine, exportHandler *handlers.ExportHandler
 		export := api.Group("/export")
 		{
 			export.POST("/thesis-results", exportHandler.GenerateThesisResults)
+			export.GET("/thesis-file/:filename", exportHandler.DownloadThesisFile)
 		}
 	}
 }

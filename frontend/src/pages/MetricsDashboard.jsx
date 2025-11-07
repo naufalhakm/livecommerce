@@ -69,7 +69,18 @@ const MetricsDashboard = () => {
       const response = await metricsAPI.generateThesisResults();
       const result = response.data;
       
-      alert(`🎓 Thesis results generated successfully!\n\nFiles created:\n${result.files?.join('\n') || 'Charts and analysis'}\n\nLocation: ${result.location || 'thesis_results/'}`);
+      // Show success message with download options
+      const files = result.files || [];
+      const fileList = files.map(file => `• ${file}`).join('\n');
+      
+      if (confirm(`🎓 Thesis results generated successfully!\n\nFiles created:\n${fileList}\n\nLocation: ${result.location || 'thesis_results/'}\n\nWould you like to download the files?`)) {
+        // Download each file
+        files.forEach(filename => {
+          setTimeout(() => {
+            metricsAPI.downloadThesisFile(filename);
+          }, 500); // Small delay between downloads
+        });
+      }
     } catch (error) {
       console.error('Error generating thesis results:', error);
       alert('Error generating thesis results');

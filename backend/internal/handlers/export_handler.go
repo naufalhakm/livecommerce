@@ -101,6 +101,18 @@ func (h *ExportHandler) GenerateThesisResults(c *gin.Context) {
 	})
 }
 
+func (h *ExportHandler) DownloadThesisFile(c *gin.Context) {
+	filename := c.Param("filename")
+	filePath := filepath.Join("thesis_results", filename)
+	
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "File not found"})
+		return
+	}
+	
+	c.File(filePath)
+}
+
 func (h *ExportHandler) calculateAvgFPS(metrics []entities.YOLOMetric) float64 {
 	if len(metrics) == 0 {
 		return 0

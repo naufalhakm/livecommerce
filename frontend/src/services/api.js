@@ -96,7 +96,16 @@ export const metricsAPI = {
     link.click();
     document.body.removeChild(link);
   },
-  generateThesisResults: () => api.post('/export/thesis-results')
+  generateThesisResults: () => api.post('/export/thesis-results'),
+  downloadThesisFile: (filename) => {
+    const url = `${API_BASE_URL}/api/export/thesis-file/${filename}`;
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
 };
 
 export default api;
