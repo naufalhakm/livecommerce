@@ -41,7 +41,7 @@ const MetricsDashboard = () => {
 
   const fetchMetricsData = async () => {
     try {
-      const response = await fetch('http://localhost:8080/api/metrics/');
+      const response = await fetch('http://backend:8080/api/metrics/');
       const data = await response.json();
       setMetricsData(data);
     } catch (error) {
@@ -51,7 +51,7 @@ const MetricsDashboard = () => {
 
   const fetchThesisData = async () => {
     try {
-      const response = await fetch('http://localhost:8080/api/metrics/thesis');
+      const response = await fetch('http://backend:8080/api/metrics/thesis');
       const data = await response.json();
       setThesisData(data);
       setLoading(false);
@@ -62,7 +62,7 @@ const MetricsDashboard = () => {
   };
 
   const downloadCSV = (type) => {
-    const url = `http://localhost:8080/api/metrics/download?type=${type}`;
+    const url = `http://backend:8080/api/metrics/download?type=${type}`;
     const link = document.createElement('a');
     link.href = url;
     link.download = `${type}_metrics.csv`;
@@ -73,7 +73,7 @@ const MetricsDashboard = () => {
 
   const generateThesisResults = async () => {
     try {
-      const response = await fetch('http://localhost:8080/api/export/thesis-results', {
+      const response = await fetch('http://backend:8080/api/export/thesis-results', {
         method: 'POST'
       });
       const result = await response.json();

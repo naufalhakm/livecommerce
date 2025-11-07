@@ -87,5 +87,5 @@ func (s *storageService) uploadLocal(file *multipart.FileHeader) (string, error)
 		return "", err
 	}
 	
-	return fmt.Sprintf("http://localhost:8080/uploads/%s", fileName), nil
+	return fmt.Sprintf("http://backend:8080/uploads/%s", fileName), nil
 }
