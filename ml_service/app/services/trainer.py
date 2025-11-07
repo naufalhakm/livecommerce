@@ -294,10 +294,22 @@ class TrainerService:
         all_detections = []
         clip_total_time = 0
         
+        # Enhanced product classes for e-commerce (same as crop_objects_from_image)
+        product_classes = {
+            # Electronics
+            63: 'laptop', 64: 'mouse', 66: 'keyboard', 67: 'cell phone',
+            # Kitchen & Dining
+            39: 'bottle', 40: 'wine glass', 41: 'cup',
+            # Home & Garden
+            73: 'book',
+        }
+        
         # Process YOLO detections (now returns structured data)
         for detection in detections:
-            # Skip person class for product detection
-            if detection.get('class_id') == 0:
+            class_id = detection.get('class_id')
+            # Skip person class and non-product classes
+            if class_id == 0 or class_id not in product_classes:
+                logger.info(f"⏭️ Skipping class_id={class_id} ({detection.get('class', 'unknown')}) - not a product class")
                 continue
                 
             bbox = detection['bbox']
